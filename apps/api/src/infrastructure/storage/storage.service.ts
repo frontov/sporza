@@ -4,6 +4,7 @@ import {
   CreateBucketCommand,
   GetObjectCommand,
   HeadBucketCommand,
+  PutBucketPolicyCommand,
   PutObjectCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
@@ -35,6 +36,7 @@ export class StorageService implements OnModuleInit {
 
   async onModuleInit() {
     await this.ensureBucket();
+    await this.ensurePublicReadPolicy();
   }
 
   async putObject(key: string, body: Buffer, contentType?: string) {
@@ -91,5 +93,27 @@ export class StorageService implements OnModuleInit {
         }),
       );
     }
+  }
+
+  private async ensurePublicReadPolicy() {
+    await this.client.send(
+      new PutBucketPolicyCommand({
+        Bucket: this.bucket,
+        Policy: JSON.stringify({
+          Version: "2012-10-17",
+          Statement: [
+            {
+              Sid: "PublicReadGetObject",
+              Effect: "Allow",
+              Principal: {
+                AWS: ["*"],
+              },
+              Action: ["s3:GetObject"],
+              Resource: [`arn:aws:s3:::${this.bucket}/*`],
+            },
+          ],
+        }),
+      }),
+    );
   }
 }
