@@ -145,11 +145,23 @@ export class AuthService {
       refresh_token_hash: string;
       email: string;
       role: "user" | "admin";
+      username: string;
+      full_name: string;
+      is_blocked: boolean;
     }>(
       `
-        SELECT s.id, s.user_id, s.refresh_token_hash, u.email, u.role
+        SELECT
+          s.id,
+          s.user_id,
+          s.refresh_token_hash,
+          u.email,
+          u.role,
+          u.is_blocked,
+          p.username,
+          p.full_name
         FROM sessions s
         JOIN users u ON u.id = s.user_id
+        JOIN profiles p ON p.user_id = u.id
         WHERE s.id = $1
           AND s.revoked_at IS NULL
           AND s.expires_at > NOW()
@@ -159,7 +171,7 @@ export class AuthService {
 
     const session = result.rows[0];
 
-    if (!session || !(await argon2.verify(session.refresh_token_hash, dto.refreshToken))) {
+    if (!session || session.is_blocked || !(await argon2.verify(session.refresh_token_hash, dto.refreshToken))) {
       throw new UnauthorizedException("Invalid refresh token");
     }
 
@@ -168,7 +180,16 @@ export class AuthService {
       const sessionId = randomUUID();
       const tokens = await this.issueTokens(session.user_id, session.email, session.role, sessionId);
       await this.createSession(client, sessionId, session.user_id, tokens.refreshToken);
-      return tokens;
+      return {
+        ...tokens,
+        user: {
+          id: session.user_id,
+          email: session.email,
+          username: session.username,
+          fullName: session.full_name,
+          role: session.role,
+        },
+      };
     });
   }
 
