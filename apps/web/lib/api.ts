@@ -156,11 +156,23 @@ export interface StravaStatusResponse {
   connection: StravaConnection | null;
 }
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+function getApiBaseUrl() {
+  const configured = process.env.NEXT_PUBLIC_API_URL?.trim();
+
+  if (configured) {
+    return configured.replace(/\/$/, "");
+  }
+
+  if (typeof window !== "undefined" && window.location?.origin) {
+    return window.location.origin.replace(/\/$/, "");
+  }
+
+  return "";
+}
 
 async function request<T>(path: string, init?: RequestInit, accessToken?: string): Promise<T> {
   const hasBody = init?.body !== undefined && init.body !== null;
-  const response = await fetch(`${API_URL}/v1${path}`, {
+  const response = await fetch(`${getApiBaseUrl()}/v1${path}`, {
     ...init,
     headers: {
       ...(hasBody && !(init.body instanceof FormData) ? { "Content-Type": "application/json" } : {}),
