@@ -82,3 +82,28 @@ curl -X POST https://sporza.ru/v1/strava/webhook/ensure
 git pull
 docker compose -f docker-compose.prod.yml --env-file .env up -d --build
 ```
+
+## GitHub Actions
+
+В репозитории есть workflow [deploy.yml](/Users/roman/Documents/sporza/.github/workflows/deploy.yml), который:
+
+- запускается автоматически при push в `main`
+- умеет запускаться вручную через `Run workflow`
+- локально собирает `@sporza/api` и `@sporza/web`
+- по SSH подключается к серверу и выполняет [deploy-prod.sh](/Users/roman/Documents/sporza/deploy/deploy-prod.sh)
+
+### Что нужно добавить в GitHub Secrets
+
+- `PROD_SSH_PRIVATE_KEY` — приватный ключ, у которого есть SSH-доступ на `root@146.103.124.234`
+
+### Как работает deploy на сервере
+
+Скрипт [deploy-prod.sh](/Users/roman/Documents/sporza/deploy/deploy-prod.sh):
+
+- проверяет compose-конфиг
+- поднимает `postgres`, `redis`, `minio`
+- пересобирает `api` и `web`
+- пересоздаёт `api`, `web`, `caddy`
+- печатает `docker-compose ps`
+
+После этого обновление продакшна можно делать одной кнопкой из GitHub Actions или обычным push в `main`.

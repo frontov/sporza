@@ -1,0 +1,60 @@
+name: Deploy Production
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: "20"
+  PROD_HOST: 146.103.124.234
+  PROD_USER: root
+  PROD_PATH: /opt/sporza
+
+jobs:
+  deploy:
+    name: Build And Deploy
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Build API
+        run: npm run build --workspace @sporza/api
+
+      - name: Build Web
+        run: npm run build --workspace @sporza/web
+
+      - name: Configure SSH Key
+        shell: bash
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.PROD_SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${{ env.PROD_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Deploy On Server
+        shell: bash
+        run: |
+          ssh "${{ env.PROD_USER }}@${{ env.PROD_HOST }}" \
+            "cd '${{ env.PROD_PATH }}' && git pull --ff-only origin main && bash deploy/deploy-prod.sh"
