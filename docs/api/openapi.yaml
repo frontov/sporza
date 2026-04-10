@@ -1,0 +1,609 @@
+openapi: 3.1.0
+info:
+  title: Sporza MVP API
+  version: 0.1.0
+  description: REST API contract for the first web-first MVP release.
+servers:
+  - url: https://api.sporza.local
+tags:
+  - name: Auth
+  - name: Profile
+  - name: Activities
+  - name: Imports
+  - name: Feed
+  - name: Follows
+  - name: Clubs
+  - name: Events
+  - name: Notifications
+  - name: Admin
+paths:
+  /v1/auth/register:
+    post:
+      tags: [Auth]
+      summary: Register user by email
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: User registered
+  /v1/auth/login:
+    post:
+      tags: [Auth]
+      summary: Login with email and password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Auth tokens issued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokens'
+  /v1/auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Rotate refresh token
+      responses:
+        '200':
+          description: New tokens issued
+  /v1/profile/me:
+    get:
+      tags: [Profile]
+      summary: Get current user profile
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Profile payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Profile'
+    patch:
+      tags: [Profile]
+      summary: Update current user profile
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProfileRequest'
+      responses:
+        '200':
+          description: Updated profile
+  /v1/profiles/{username}:
+    get:
+      tags: [Profile]
+      summary: Get public profile by username
+      parameters:
+        - $ref: '#/components/parameters/Username'
+      responses:
+        '200':
+          description: Public profile
+  /v1/imports:
+    post:
+      tags: [Imports]
+      summary: Upload FIT, GPX or TCX activity file
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '202':
+          description: Import job created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportJob'
+  /v1/imports/{jobId}:
+    get:
+      tags: [Imports]
+      summary: Get import job status
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: Current import state
+  /v1/activities:
+    get:
+      tags: [Activities]
+      summary: Get current user activities
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Paginated activities
+    post:
+      tags: [Activities]
+      summary: Create manual activity metadata record if needed later
+      security:
+        - bearerAuth: []
+      responses:
+        '501':
+          description: Not in initial MVP scope
+  /v1/activities/{activityId}:
+    get:
+      tags: [Activities]
+      summary: Get activity details
+      parameters:
+        - $ref: '#/components/parameters/ActivityId'
+      responses:
+        '200':
+          description: Activity details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Activity'
+    delete:
+      tags: [Activities]
+      summary: Delete own activity
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ActivityId'
+      responses:
+        '204':
+          description: Activity deleted
+  /v1/activities/{activityId}/privacy:
+    patch:
+      tags: [Activities]
+      summary: Update activity visibility
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ActivityId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [visibility]
+              properties:
+                visibility:
+                  $ref: '#/components/schemas/ActivityVisibility'
+      responses:
+        '200':
+          description: Privacy updated
+  /v1/activities/{activityId}/likes:
+    post:
+      tags: [Activities]
+      summary: Like activity
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ActivityId'
+      responses:
+        '201':
+          description: Like created
+    delete:
+      tags: [Activities]
+      summary: Unlike activity
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ActivityId'
+      responses:
+        '204':
+          description: Like removed
+  /v1/activities/{activityId}/comments:
+    get:
+      tags: [Activities]
+      summary: List activity comments
+      parameters:
+        - $ref: '#/components/parameters/ActivityId'
+      responses:
+        '200':
+          description: Comment list
+    post:
+      tags: [Activities]
+      summary: Add comment to activity
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ActivityId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body:
+                  type: string
+                  minLength: 1
+                  maxLength: 2000
+      responses:
+        '201':
+          description: Comment created
+  /v1/feed:
+    get:
+      tags: [Feed]
+      summary: Get personalized feed
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Feed page
+  /v1/follows/{userId}:
+    post:
+      tags: [Follows]
+      summary: Follow user
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '201':
+          description: Follow created
+    delete:
+      tags: [Follows]
+      summary: Unfollow user
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '204':
+          description: Follow removed
+  /v1/clubs:
+    get:
+      tags: [Clubs]
+      summary: List clubs
+      responses:
+        '200':
+          description: Clubs list
+    post:
+      tags: [Clubs]
+      summary: Create club
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateClubRequest'
+      responses:
+        '201':
+          description: Club created
+  /v1/clubs/{clubId}:
+    get:
+      tags: [Clubs]
+      summary: Get club page
+      parameters:
+        - $ref: '#/components/parameters/ClubId'
+      responses:
+        '200':
+          description: Club page
+    patch:
+      tags: [Clubs]
+      summary: Update club by owner
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ClubId'
+      responses:
+        '200':
+          description: Club updated
+  /v1/clubs/{clubId}/members:
+    post:
+      tags: [Clubs]
+      summary: Join club
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ClubId'
+      responses:
+        '201':
+          description: Club joined
+    delete:
+      tags: [Clubs]
+      summary: Leave club
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ClubId'
+      responses:
+        '204':
+          description: Club left
+  /v1/events:
+    get:
+      tags: [Events]
+      summary: List and filter events
+      parameters:
+        - name: sport
+          in: query
+          schema:
+            type: string
+        - name: region
+          in: query
+          schema:
+            type: string
+        - name: dateFrom
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: dateTo
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Events page
+  /v1/events/{eventId}:
+    get:
+      tags: [Events]
+      summary: Get event card
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+      responses:
+        '200':
+          description: Event details
+  /v1/events/{eventId}/participation:
+    put:
+      tags: [Events]
+      summary: Set interested or going mark
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  $ref: '#/components/schemas/EventParticipationStatus'
+      responses:
+        '200':
+          description: Participation status saved
+    delete:
+      tags: [Events]
+      summary: Remove participation mark
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+      responses:
+        '204':
+          description: Participation removed
+  /v1/notifications:
+    get:
+      tags: [Notifications]
+      summary: List in-app notifications
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Notification list
+  /v1/admin/events/sync:
+    post:
+      tags: [Admin]
+      summary: Start manual event synchronization
+      security:
+        - bearerAuth: []
+      responses:
+        '202':
+          description: Sync job accepted
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    Username:
+      name: username
+      in: path
+      required: true
+      schema:
+        type: string
+    JobId:
+      name: jobId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ActivityId:
+      name: activityId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ClubId:
+      name: clubId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    EventId:
+      name: eventId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    Cursor:
+      name: cursor
+      in: query
+      schema:
+        type: string
+    Limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+  schemas:
+    RegisterRequest:
+      type: object
+      required: [email, password, username, fullName]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+        username:
+          type: string
+        fullName:
+          type: string
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+    AuthTokens:
+      type: object
+      properties:
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+    ActivityVisibility:
+      type: string
+      enum: [public, followers, private]
+    EventParticipationStatus:
+      type: string
+      enum: [interested, going]
+    Profile:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        fullName:
+          type: string
+        avatarUrl:
+          type: string
+          nullable: true
+        city:
+          type: string
+          nullable: true
+        bio:
+          type: string
+          nullable: true
+        sports:
+          type: array
+          items:
+            type: string
+    UpdateProfileRequest:
+      type: object
+      properties:
+        fullName:
+          type: string
+        city:
+          type: string
+        bio:
+          type: string
+        sports:
+          type: array
+          items:
+            type: string
+    ImportJob:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [queued, processing, completed, failed, deduplicated]
+        createdAt:
+          type: string
+          format: date-time
+    Activity:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        sportType:
+          type: string
+        title:
+          type: string
+          nullable: true
+        startedAt:
+          type: string
+          format: date-time
+        durationSeconds:
+          type: integer
+        distanceMeters:
+          type: number
+          nullable: true
+        elevationGainMeters:
+          type: number
+          nullable: true
+        avgHeartRate:
+          type: integer
+          nullable: true
+        calories:
+          type: integer
+          nullable: true
+        visibility:
+          $ref: '#/components/schemas/ActivityVisibility'
+    CreateClubRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        city:
+          type: string
+        sportType:
+          type: string
+        description:
+          type: string

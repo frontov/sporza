@@ -1,0 +1,35 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  --background: #f7fbff;
+  --foreground: #112a46;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, rgba(255, 107, 74, 0.16), transparent 28%),
+    radial-gradient(circle at top right, rgba(63, 176, 172, 0.18), transparent 24%),
+    linear-gradient(180deg, #f7fbff 0%, #eef6ff 100%);
+  color: var(--foreground);
+  padding-bottom: calc(6rem + env(safe-area-inset-bottom));
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+@media (min-width: 768px) {
+  body {
+    padding-bottom: 0;
+  }
+}

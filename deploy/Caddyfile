@@ -1,0 +1,25 @@
+sporza.ru, www.sporza.ru {
+  encode zstd gzip
+
+  header {
+    X-Content-Type-Options nosniff
+    X-Frame-Options SAMEORIGIN
+    Referrer-Policy strict-origin-when-cross-origin
+  }
+
+  handle_path /v1/* {
+    reverse_proxy api:4000
+  }
+
+  handle /docs* {
+    reverse_proxy api:4000
+  }
+
+  handle_path /storage/* {
+    reverse_proxy minio:9000
+  }
+
+  handle {
+    reverse_proxy web:3000
+  }
+}
