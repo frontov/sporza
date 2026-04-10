@@ -10,12 +10,13 @@ export function useEvents(accessToken: string | null) {
   const [pendingEventId, setPendingEventId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize] = useState(24);
+  const [sort, setSort] = useState<"date_asc" | "popular">("date_asc");
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
 
   useEffect(() => {
     api
-      .getEvents({ page, pageSize }, accessToken ?? undefined)
+      .getEvents({ page, pageSize, sort }, accessToken ?? undefined)
       .then((response) => {
         setItems(response.items);
         setTotal(response.total);
@@ -25,7 +26,7 @@ export function useEvents(accessToken: string | null) {
       .catch((requestError) => {
         setError(requestError instanceof Error ? requestError.message : "Не удалось загрузить события");
       });
-  }, [accessToken, page, pageSize]);
+  }, [accessToken, page, pageSize, sort]);
 
   /** «Участвую»: в избранном + статус going; повторное нажатие снимает и то и другое. */
   async function toggleParticipateGoing(eventId: string) {
@@ -116,8 +117,10 @@ export function useEvents(accessToken: string | null) {
     toggleFavorite,
     page,
     pageSize,
+    sort,
     total,
     totalPages,
     setPage,
+    setSort,
   };
 }

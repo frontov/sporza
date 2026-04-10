@@ -12,7 +12,7 @@ import { useAuth } from "./auth-provider";
 export function EventsClient() {
   const [tab, setTab] = useState<"all" | "favorites" | "friends">("all");
   const { accessToken } = useAuth();
-  const { items, error, pendingEventId, toggleParticipateGoing, toggleFavorite, page, total, totalPages, setPage } =
+  const { items, error, pendingEventId, toggleParticipateGoing, toggleFavorite, page, total, totalPages, sort, setPage, setSort } =
     useEvents(accessToken);
 
   return (
@@ -52,6 +52,28 @@ export function EventsClient() {
             События друзей
           </button>
         </div>
+        {tab === "all" ? (
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button
+              className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+                sort === "date_asc" ? "bg-ink text-white" : "border border-ink/10 bg-white text-ink"
+              }`}
+              onClick={() => setSort("date_asc")}
+              type="button"
+            >
+              По дате
+            </button>
+            <button
+              className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+                sort === "popular" ? "bg-ink text-white" : "border border-ink/10 bg-white text-ink"
+              }`}
+              onClick={() => setSort("popular")}
+              type="button"
+            >
+              Популярные
+            </button>
+          </div>
+        ) : null}
         {tab === "all" ? <p className="mt-2 text-sm text-slate-500">Всего событий: {total}</p> : null}
       </div>
 
@@ -71,6 +93,7 @@ export function EventsClient() {
                 eyebrow={`${event.sportType} • ${new Date(event.startsAt).toLocaleDateString("ru-RU")}`}
               >
                 <p className="text-slate-700">{[event.region, event.city].filter(Boolean).join(" • ") || "Локация уточняется"}</p>
+                <p className="mt-2 text-sm text-slate-500">Сохранили в избранное: {event.favoritesCount}</p>
                 {event.favoriteFriendsCount > 0 ? (
                   <p className="mt-3 text-sm text-slate-600">
                     Уже в избранном у друзей: {event.favoriteFriends.map((friend) => friend.fullName).join(", ")}

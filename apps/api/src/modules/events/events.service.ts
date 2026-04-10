@@ -8,6 +8,7 @@ interface EventFilters {
   region?: string;
   dateFrom?: string;
   dateTo?: string;
+  sort?: "date_asc" | "popular";
   page?: number;
   pageSize?: number;
 }
@@ -28,6 +29,7 @@ interface EventRow {
   source_event_id: string;
   participation_status?: "interested" | "going" | null;
   is_favorite?: boolean | null;
+  favorites_count?: string | number | null;
 }
 
 interface FavoriteFriendRow {
@@ -115,6 +117,7 @@ export class EventsService {
     const page = Math.max(1, filters.page ?? 1);
     const pageSize = Math.min(100, Math.max(1, filters.pageSize ?? 24));
     const offset = (page - 1) * pageSize;
+    const sort = filters.sort === "popular" ? "popular" : "date_asc";
 
     if (filters.sport) {
       filterParams.push(filters.sport);
@@ -178,13 +181,30 @@ export class EventsService {
           image_url,
           source_name,
           source_event_id,
+          COUNT(all_favorites.event_id)::text AS favorites_count,
           ${participationSelect},
           ${favoriteSelect}
         FROM events
+        LEFT JOIN event_favorites all_favorites ON all_favorites.event_id = events.id
         ${userId ? `LEFT JOIN event_participations ep ON ep.event_id = events.id AND ep.user_id = $${userParam}` : ""}
         ${userId ? `LEFT JOIN event_favorites ef ON ef.event_id = events.id AND ef.user_id = $${userParam}` : ""}
         WHERE ${where.join(" AND ")}
-        ORDER BY starts_at ASC
+        GROUP BY
+          events.id,
+          events.title,
+          events.description,
+          events.sport_type,
+          events.region,
+          events.city,
+          events.venue,
+          events.starts_at,
+          events.registration_url,
+          events.source_url,
+          events.image_url,
+          events.source_name,
+          events.source_event_id
+          ${userId ? ", ep.status, ef.event_id" : ""}
+        ORDER BY ${sort === "popular" ? "COUNT(all_favorites.event_id) DESC, starts_at ASC" : "starts_at ASC, COUNT(all_favorites.event_id) DESC"}
         LIMIT $${limitParam}
         OFFSET $${offsetParam}
       `,
@@ -204,6 +224,7 @@ export class EventsService {
         region: filters.region,
         dateFrom: filters.dateFrom,
         dateTo: filters.dateTo,
+        sort,
       },
       page,
       pageSize,
@@ -902,6 +923,7 @@ export class EventsService {
       sourceEventId: row.source_event_id,
       participationStatus: row.participation_status ?? null,
       isFavorite: Boolean(row.is_favorite),
+      favoritesCount: Number(row.favorites_count ?? "0"),
     };
   }
 

@@ -28,6 +28,7 @@ export class EventsController {
     @Query("region") region?: string,
     @Query("dateFrom") dateFrom?: string,
     @Query("dateTo") dateTo?: string,
+    @Query("sort") sort?: string,
     @Query("page") page?: string,
     @Query("pageSize") pageSize?: string,
   ) {
@@ -37,6 +38,7 @@ export class EventsController {
         region,
         dateFrom,
         dateTo,
+        sort: sort === "popular" ? "popular" : "date_asc",
         page: page ? Number(page) : undefined,
         pageSize: pageSize ? Number(pageSize) : undefined,
       },

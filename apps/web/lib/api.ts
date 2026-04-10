@@ -128,6 +128,7 @@ export interface EventItem {
   sourceEventId: string;
   participationStatus: "interested" | "going" | null;
   isFavorite: boolean;
+  favoritesCount: number;
   favoriteFriends: FavoriteFriend[];
   favoriteFriendsCount: number;
 }
@@ -451,12 +452,13 @@ export const api = {
     return request<{ items: ImportJob[] }>("/imports", undefined, accessToken);
   },
   getEvents(
-    filters?: { sport?: string; region?: string; page?: number; pageSize?: number },
+    filters?: { sport?: string; region?: string; sort?: "date_asc" | "popular"; page?: number; pageSize?: number },
     accessToken?: string,
   ) {
     const params = new URLSearchParams();
     if (filters?.sport) params.set("sport", filters.sport);
     if (filters?.region) params.set("region", filters.region);
+    if (filters?.sort) params.set("sort", filters.sort);
     if (filters?.page) params.set("page", String(filters.page));
     if (filters?.pageSize) params.set("pageSize", String(filters.pageSize));
     const query = params.size ? `?${params.toString()}` : "";
