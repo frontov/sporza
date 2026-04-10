@@ -6,6 +6,21 @@ import { Public } from "../../common/public-route";
 import { SetEventParticipationDto } from "./dto/set-event-participation.dto";
 import { EventsService } from "./events.service";
 
+function toArray(value?: string | string[]) {
+  if (!value) {
+    return [];
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => item.trim()).filter(Boolean);
+  }
+
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 @Controller("events")
 export class EventsController {
   constructor(private readonly eventsService: EventsService) {}
@@ -24,21 +39,29 @@ export class EventsController {
   @Public()
   listEvents(
     @OptionalUser() user: { userId: string } | null,
+    @Query("q") q?: string,
     @Query("sport") sport?: string,
     @Query("region") region?: string,
+    @Query("city") city?: string | string[],
+    @Query("category") category?: string | string[],
     @Query("dateFrom") dateFrom?: string,
     @Query("dateTo") dateTo?: string,
     @Query("sort") sort?: string,
+    @Query("includePast") includePast?: string,
     @Query("page") page?: string,
     @Query("pageSize") pageSize?: string,
   ) {
     return this.eventsService.list(
       {
+        q,
         sport,
         region,
+        cities: toArray(city),
+        categories: toArray(category),
         dateFrom,
         dateTo,
         sort: sort === "popular" ? "popular" : "date_asc",
+        includePast: includePast === "true",
         page: page ? Number(page) : undefined,
         pageSize: pageSize ? Number(pageSize) : undefined,
       },

@@ -4,11 +4,17 @@ interface SectionCardProps {
   title: ReactNode;
   eyebrow?: string;
   children: ReactNode;
+  className?: string;
 }
 
-export function SectionCard({ title, eyebrow, children }: SectionCardProps) {
+export function SectionCard({ title, eyebrow, children, className }: SectionCardProps) {
   return (
-    <section className="rounded-[24px] border border-white/70 bg-white/80 p-4 shadow-[0_20px_60px_rgba(17,42,70,0.08)] backdrop-blur sm:rounded-[28px] sm:p-6">
+    <section
+      className={[
+        "rounded-[24px] border border-white/70 bg-white/80 p-4 shadow-[0_20px_60px_rgba(17,42,70,0.08)] backdrop-blur sm:rounded-[28px] sm:p-6",
+        className ?? "",
+      ].join(" ")}
+    >
       {eyebrow ? (
         <p className="mb-3 text-xs font-semibold uppercase tracking-[0.24em] text-coral">{eyebrow}</p>
       ) : null}

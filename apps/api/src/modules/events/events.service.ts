@@ -4,10 +4,14 @@ import { ConfigService } from "@nestjs/config";
 import { DatabaseService } from "../../infrastructure/database/database.service";
 
 interface EventFilters {
+  q?: string;
   sport?: string;
   region?: string;
+  cities?: string[];
+  categories?: string[];
   dateFrom?: string;
   dateTo?: string;
+  includePast?: boolean;
   sort?: "date_asc" | "popular";
   page?: number;
   pageSize?: number;
@@ -27,6 +31,7 @@ interface EventRow {
   image_url: string | null;
   source_name: string;
   source_event_id: string;
+  category_label?: string | null;
   participation_status?: "interested" | "going" | null;
   is_favorite?: boolean | null;
   favorites_count?: string | number | null;
@@ -118,6 +123,15 @@ export class EventsService {
     const pageSize = Math.min(100, Math.max(1, filters.pageSize ?? 24));
     const offset = (page - 1) * pageSize;
     const sort = filters.sort === "popular" ? "popular" : "date_asc";
+    const cities = (filters.cities ?? []).filter(Boolean);
+    const categories = (filters.categories ?? []).filter(Boolean);
+
+    if (filters.q?.trim()) {
+      filterParams.push(`%${filters.q.trim()}%`);
+      where.push(
+        `(title ILIKE $${filterParams.length} OR COALESCE(description, '') ILIKE $${filterParams.length} OR COALESCE(region, '') ILIKE $${filterParams.length} OR COALESCE(city, '') ILIKE $${filterParams.length} OR COALESCE(venue, '') ILIKE $${filterParams.length})`,
+      );
+    }
 
     if (filters.sport) {
       filterParams.push(filters.sport);
@@ -129,8 +143,21 @@ export class EventsService {
       where.push(`region = $${filterParams.length}`);
     }
 
+    if (cities.length > 0) {
+      filterParams.push(cities);
+      where.push(`city = ANY($${filterParams.length}::text[])`);
+    }
+
+    if (categories.length > 0) {
+      filterParams.push(categories);
+      where.push(`COALESCE(metadata->>'category', '') = ANY($${filterParams.length}::text[])`);
+    }
+
     if (filters.dateFrom) {
       filterParams.push(filters.dateFrom);
+      where.push(`starts_at >= $${filterParams.length}::date`);
+    } else if (!filters.includePast && !filters.dateTo) {
+      filterParams.push(this.getMoscowToday());
       where.push(`starts_at >= $${filterParams.length}::date`);
     }
 
@@ -181,6 +208,7 @@ export class EventsService {
           image_url,
           source_name,
           source_event_id,
+          events.metadata->>'category' AS category_label,
           COUNT(all_favorites.event_id)::text AS favorites_count,
           ${participationSelect},
           ${favoriteSelect}
@@ -202,7 +230,8 @@ export class EventsService {
           events.source_url,
           events.image_url,
           events.source_name,
-          events.source_event_id
+          events.source_event_id,
+          events.metadata->>'category'
           ${userId ? ", ep.status, ef.event_id" : ""}
         ORDER BY ${sort === "popular" ? "COUNT(all_favorites.event_id) DESC, starts_at ASC" : "starts_at ASC, COUNT(all_favorites.event_id) DESC"}
         LIMIT $${limitParam}
@@ -212,24 +241,65 @@ export class EventsService {
     );
 
     const total = Number(countResult.rows[0]?.total ?? "0");
+    const facetResult = await this.databaseService.query<{ available_cities: string[] | null; available_categories: string[] | null }>(
+      `
+        SELECT
+          ARRAY(
+            SELECT city
+            FROM (
+              SELECT city, COUNT(*) AS city_count
+              FROM events
+              WHERE is_hidden = FALSE
+                AND is_archived = FALSE
+                AND city IS NOT NULL
+                AND city <> ''
+              GROUP BY city
+              ORDER BY city_count DESC, city ASC
+              LIMIT 50
+            ) ranked_cities
+          ) AS available_cities,
+          ARRAY(
+            SELECT category
+            FROM (
+              SELECT metadata->>'category' AS category, COUNT(*) AS category_count
+              FROM events
+              WHERE is_hidden = FALSE
+                AND is_archived = FALSE
+                AND COALESCE(metadata->>'category', '') <> ''
+              GROUP BY metadata->>'category'
+              ORDER BY category_count DESC, category ASC
+              LIMIT 30
+            ) ranked_categories
+          ) AS available_categories
+      `,
+    );
 
     const items = result.rows.map((row: EventRow) => this.mapEvent(row));
     const favoriteFriendsByEvent = userId
       ? await this.getFavoriteFriendsPreview(userId, items.map((item) => item.id))
       : new Map<string, { count: number; items: Array<Record<string, unknown>> }>();
+    const availableCities = facetResult.rows[0]?.available_cities ?? [];
+    const availableCategories = facetResult.rows[0]?.available_categories ?? [];
 
     return {
       filters: {
+        q: filters.q,
         sport: filters.sport,
         region: filters.region,
+        cities,
+        categories,
         dateFrom: filters.dateFrom,
         dateTo: filters.dateTo,
+        includePast: Boolean(filters.includePast),
         sort,
       },
       page,
       pageSize,
       total,
       totalPages: Math.max(1, Math.ceil(total / pageSize)),
+      availableCities,
+      popularCities: availableCities.slice(0, 8),
+      availableCategories,
       items: items.map((item) => ({
         ...item,
         favoriteFriends: favoriteFriendsByEvent.get(item.id)?.items ?? [],
@@ -921,6 +991,7 @@ export class EventsService {
       imageUrl: row.image_url,
       sourceName: row.source_name,
       sourceEventId: row.source_event_id,
+      category: row.category_label ?? null,
       participationStatus: row.participation_status ?? null,
       isFavorite: Boolean(row.is_favorite),
       favoritesCount: Number(row.favorites_count ?? "0"),

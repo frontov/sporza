@@ -117,6 +117,7 @@ export interface EventItem {
   title: string;
   description: string | null;
   sportType: string;
+  category: string | null;
   region: string | null;
   city: string | null;
   venue: string | null;
@@ -157,6 +158,9 @@ export interface EventsResponse {
   pageSize: number;
   total: number;
   totalPages: number;
+  availableCities: string[];
+  popularCities: string[];
+  availableCategories: string[];
 }
 
 export interface FriendEventItem extends EventItem {
@@ -452,12 +456,30 @@ export const api = {
     return request<{ items: ImportJob[] }>("/imports", undefined, accessToken);
   },
   getEvents(
-    filters?: { sport?: string; region?: string; sort?: "date_asc" | "popular"; page?: number; pageSize?: number },
+    filters?: {
+      q?: string;
+      sport?: string;
+      region?: string;
+      cities?: string[];
+      categories?: string[];
+      dateFrom?: string;
+      dateTo?: string;
+      includePast?: boolean;
+      sort?: "date_asc" | "popular";
+      page?: number;
+      pageSize?: number;
+    },
     accessToken?: string,
   ) {
     const params = new URLSearchParams();
+    if (filters?.q) params.set("q", filters.q);
     if (filters?.sport) params.set("sport", filters.sport);
     if (filters?.region) params.set("region", filters.region);
+    filters?.cities?.forEach((city) => params.append("city", city));
+    filters?.categories?.forEach((category) => params.append("category", category));
+    if (filters?.dateFrom) params.set("dateFrom", filters.dateFrom);
+    if (filters?.dateTo) params.set("dateTo", filters.dateTo);
+    if (filters?.includePast) params.set("includePast", "true");
     if (filters?.sort) params.set("sort", filters.sort);
     if (filters?.page) params.set("page", String(filters.page));
     if (filters?.pageSize) params.set("pageSize", String(filters.pageSize));

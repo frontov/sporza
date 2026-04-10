@@ -3,17 +3,45 @@
 import Link from "next/link";
 import { useState } from "react";
 
-import { useEvents } from "../hooks/use-events";
+import { EventsFilterState, useEvents } from "../hooks/use-events";
 import { FavoriteEventsClient } from "./favorite-events-client";
 import { FriendsEventsClient } from "./friends-events-client";
 import { SectionCard } from "./section-card";
 import { useAuth } from "./auth-provider";
 
+function toggleValue(values: string[], value: string) {
+  return values.includes(value) ? values.filter((item) => item !== value) : [...values, value];
+}
+
 export function EventsClient() {
   const [tab, setTab] = useState<"all" | "favorites" | "friends">("all");
   const { accessToken } = useAuth();
-  const { items, error, pendingEventId, toggleParticipateGoing, toggleFavorite, page, total, totalPages, sort, setPage, setSort } =
-    useEvents(accessToken);
+  const {
+    items,
+    error,
+    pendingEventId,
+    toggleParticipateGoing,
+    toggleFavorite,
+    page,
+    total,
+    totalPages,
+    sort,
+    filters,
+    availableCities,
+    popularCities,
+    availableCategories,
+    setPage,
+    setSort,
+    setFilters,
+    resetFilters,
+  } = useEvents(accessToken);
+
+  function updateFilters(patch: Partial<EventsFilterState>) {
+    setFilters({
+      ...filters,
+      ...patch,
+    });
+  }
 
   return (
     <main className="mx-auto max-w-4xl px-4 py-5 sm:px-6 sm:py-6">
@@ -53,26 +81,139 @@ export function EventsClient() {
           </button>
         </div>
         {tab === "all" ? (
-          <div className="mt-4 flex flex-wrap gap-2">
-            <button
-              className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
-                sort === "date_asc" ? "bg-ink text-white" : "border border-ink/10 bg-white text-ink"
-              }`}
-              onClick={() => setSort("date_asc")}
-              type="button"
-            >
-              По дате
-            </button>
-            <button
-              className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
-                sort === "popular" ? "bg-ink text-white" : "border border-ink/10 bg-white text-ink"
-              }`}
-              onClick={() => setSort("popular")}
-              type="button"
-            >
-              Популярные
-            </button>
-          </div>
+          <SectionCard className="mt-4" title="Фильтры" eyebrow="Поиск мероприятий">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="block">
+                <span className="mb-1 block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Поиск</span>
+                <input
+                  className="w-full rounded-2xl border border-ink/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-coral/60"
+                  onChange={(event) => updateFilters({ q: event.target.value })}
+                  placeholder="Название, город, площадка"
+                  value={filters.q}
+                />
+              </label>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="block">
+                  <span className="mb-1 block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Дата от</span>
+                  <input
+                    className="w-full rounded-2xl border border-ink/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-coral/60"
+                    onChange={(event) => updateFilters({ dateFrom: event.target.value })}
+                    type="date"
+                    value={filters.dateFrom}
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Дата до</span>
+                  <input
+                    className="w-full rounded-2xl border border-ink/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-coral/60"
+                    onChange={(event) => updateFilters({ dateTo: event.target.value })}
+                    type="date"
+                    value={filters.dateTo}
+                  />
+                </label>
+              </div>
+            </div>
+
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+                  sort === "date_asc" ? "bg-ink text-white" : "border border-ink/10 bg-white text-ink"
+                }`}
+                onClick={() => setSort("date_asc")}
+                type="button"
+              >
+                По дате
+              </button>
+              <button
+                className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+                  sort === "popular" ? "bg-ink text-white" : "border border-ink/10 bg-white text-ink"
+                }`}
+                onClick={() => setSort("popular")}
+                type="button"
+              >
+                Популярные
+              </button>
+              <button
+                className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+                  filters.includePast ? "bg-coral text-white" : "border border-ink/10 bg-white text-ink"
+                }`}
+                onClick={() => updateFilters({ includePast: !filters.includePast })}
+                type="button"
+              >
+                {filters.includePast ? "С прошедшими" : "Только ближайшие"}
+              </button>
+              <button
+                className="rounded-full border border-ink/10 bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:border-coral/40"
+                onClick={resetFilters}
+                type="button"
+              >
+                Сбросить
+              </button>
+            </div>
+
+            {popularCities.length > 0 ? (
+              <div className="mt-5">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Популярные города</p>
+                <div className="flex flex-wrap gap-2">
+                  {popularCities.map((city) => (
+                    <button
+                      key={city}
+                      className={`rounded-full px-4 py-2 text-sm font-medium transition ${
+                        filters.cities.includes(city) ? "bg-coral text-white" : "border border-ink/10 bg-white text-ink"
+                      }`}
+                      onClick={() => updateFilters({ cities: toggleValue(filters.cities, city) })}
+                      type="button"
+                    >
+                      {city}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {availableCategories.length > 0 ? (
+              <div className="mt-5">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Виды событий</p>
+                <div className="flex flex-wrap gap-2">
+                  {availableCategories.map((category) => (
+                    <button
+                      key={category}
+                      className={`rounded-full px-4 py-2 text-sm font-medium transition ${
+                        filters.categories.includes(category)
+                          ? "bg-mint text-ink"
+                          : "border border-ink/10 bg-white text-ink"
+                      }`}
+                      onClick={() => updateFilters({ categories: toggleValue(filters.categories, category) })}
+                      type="button"
+                    >
+                      {category}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {availableCities.length > 0 ? (
+              <label className="mt-5 block">
+                <span className="mb-1 block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Город</span>
+                <select
+                  className="w-full rounded-2xl border border-ink/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-coral/60"
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    updateFilters({ cities: value ? [value] : [] });
+                  }}
+                  value={filters.cities[0] ?? ""}
+                >
+                  <option value="">Все города</option>
+                  {availableCities.map((city) => (
+                    <option key={city} value={city}>
+                      {city}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+          </SectionCard>
         ) : null}
         {tab === "all" ? <p className="mt-2 text-sm text-slate-500">Всего событий: {total}</p> : null}
       </div>
@@ -93,6 +234,7 @@ export function EventsClient() {
                 eyebrow={`${event.sportType} • ${new Date(event.startsAt).toLocaleDateString("ru-RU")}`}
               >
                 <p className="text-slate-700">{[event.region, event.city].filter(Boolean).join(" • ") || "Локация уточняется"}</p>
+                {event.category ? <p className="mt-2 text-sm text-slate-500">{event.category}</p> : null}
                 <p className="mt-2 text-sm text-slate-500">Сохранили в избранное: {event.favoritesCount}</p>
                 {event.favoriteFriendsCount > 0 ? (
                   <p className="mt-3 text-sm text-slate-600">
