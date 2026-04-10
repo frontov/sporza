@@ -7,7 +7,7 @@ sporza.ru, www.sporza.ru {
     Referrer-Policy strict-origin-when-cross-origin
   }
 
-  handle_path /v1/* {
+  handle /v1/* {
     reverse_proxy api:4000
   }
 
