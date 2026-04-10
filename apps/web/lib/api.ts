@@ -156,6 +156,37 @@ export interface StravaStatusResponse {
   connection: StravaConnection | null;
 }
 
+function extractErrorMessage(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+
+  if ("message" in payload) {
+    const message = (payload as { message?: unknown }).message;
+
+    if (typeof message === "string" && message.trim()) {
+      return message;
+    }
+
+    if (Array.isArray(message)) {
+      const firstString = message.find((item) => typeof item === "string" && item.trim());
+      if (typeof firstString === "string") {
+        return firstString;
+      }
+    }
+  }
+
+  if ("error" in payload) {
+    const error = (payload as { error?: unknown }).error;
+
+    if (typeof error === "string" && error.trim()) {
+      return error;
+    }
+  }
+
+  return null;
+}
+
 function getApiBaseUrl() {
   const configured = process.env.NEXT_PUBLIC_API_URL?.trim();
 
@@ -183,8 +214,26 @@ async function request<T>(path: string, init?: RequestInit, accessToken?: string
   });
 
   if (!response.ok) {
-    const text = await response.text();
-    throw new Error(text || `Request failed with status ${response.status}`);
+    let message: string | null = null;
+    const contentType = response.headers.get("content-type") ?? "";
+
+    if (contentType.includes("application/json")) {
+      try {
+        const payload = (await response.json()) as unknown;
+        message = extractErrorMessage(payload);
+      } catch {
+        message = null;
+      }
+    } else {
+      try {
+        const text = await response.text();
+        message = text.trim() || null;
+      } catch {
+        message = null;
+      }
+    }
+
+    throw new Error(message ?? `Request failed with status ${response.status}`);
   }
 
   if (response.status === 204) {
