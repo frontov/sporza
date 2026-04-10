@@ -16,6 +16,24 @@ interface ProfileRow {
   is_followed_by_me?: boolean | null;
 }
 
+interface ProfileEventRow {
+  id: string;
+  title: string;
+  description: string | null;
+  sport_type: string;
+  region: string | null;
+  city: string | null;
+  venue: string | null;
+  starts_at: Date | string;
+  registration_url: string | null;
+  source_url: string;
+  image_url: string | null;
+  source_name: string;
+  source_event_id: string;
+  participation_status: "interested" | "going" | null;
+  is_favorite: boolean;
+}
+
 @Injectable()
 export class ProfilesService {
   constructor(
@@ -134,6 +152,36 @@ export class ProfilesService {
       [row.user_id],
     );
 
+    const eventsResult = await this.databaseService.query<ProfileEventRow>(
+      `
+        SELECT
+          e.id,
+          e.title,
+          e.description,
+          e.sport_type,
+          e.region,
+          e.city,
+          e.venue,
+          e.starts_at,
+          e.registration_url,
+          e.source_url,
+          e.image_url,
+          e.source_name,
+          e.source_event_id,
+          ep.status AS participation_status,
+          COALESCE(ef.event_id IS NOT NULL, FALSE) AS is_favorite
+        FROM events e
+        LEFT JOIN event_participations ep ON ep.event_id = e.id AND ep.user_id = $1
+        LEFT JOIN event_favorites ef ON ef.event_id = e.id AND ef.user_id = $1
+        WHERE (ep.user_id IS NOT NULL OR ef.user_id IS NOT NULL)
+          AND e.is_hidden = FALSE
+          AND e.is_archived = FALSE
+        ORDER BY e.starts_at ASC
+        LIMIT 20
+      `,
+      [row.user_id],
+    );
+
     return {
       ...this.mapProfile(row),
       isFollowedByMe: Boolean(row.is_followed_by_me),
@@ -147,6 +195,25 @@ export class ProfilesService {
         likesCount: activity.likes_count,
         commentsCount: activity.comments_count,
         visibility: activity.visibility,
+      })),
+      events: eventsResult.rows.map((event) => ({
+        id: event.id,
+        title: event.title,
+        description: event.description,
+        sportType: event.sport_type,
+        region: event.region,
+        city: event.city,
+        venue: event.venue,
+        startsAt: new Date(event.starts_at).toISOString(),
+        registrationUrl: event.registration_url,
+        sourceUrl: event.source_url,
+        imageUrl: event.image_url,
+        sourceName: event.source_name,
+        sourceEventId: event.source_event_id,
+        participationStatus: event.participation_status,
+        isFavorite: event.is_favorite,
+        favoriteFriends: [],
+        favoriteFriendsCount: 0,
       })),
     };
   }

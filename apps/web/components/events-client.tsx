@@ -5,11 +5,12 @@ import { useState } from "react";
 
 import { useEvents } from "../hooks/use-events";
 import { FavoriteEventsClient } from "./favorite-events-client";
+import { FriendsEventsClient } from "./friends-events-client";
 import { SectionCard } from "./section-card";
 import { useAuth } from "./auth-provider";
 
 export function EventsClient() {
-  const [tab, setTab] = useState<"all" | "favorites">("all");
+  const [tab, setTab] = useState<"all" | "favorites" | "friends">("all");
   const { accessToken } = useAuth();
   const { items, error, pendingEventId, toggleParticipateGoing, toggleFavorite, page, total, totalPages, setPage } =
     useEvents(accessToken);
@@ -40,6 +41,15 @@ export function EventsClient() {
             type="button"
           >
             Избранные
+          </button>
+          <button
+            className={`rounded-full px-5 py-2.5 text-sm font-semibold transition ${
+              tab === "friends" ? "bg-coral text-white" : "border border-ink/10 bg-white text-ink"
+            }`}
+            onClick={() => setTab("friends")}
+            type="button"
+          >
+            События друзей
           </button>
         </div>
         {tab === "all" ? <p className="mt-2 text-sm text-slate-500">Всего событий: {total}</p> : null}
@@ -126,9 +136,13 @@ export function EventsClient() {
             </div>
           </div>
         </>
-      ) : (
+      ) : tab === "favorites" ? (
         <div className="mt-2">
           <FavoriteEventsClient />
+        </div>
+      ) : (
+        <div className="mt-2">
+          <FriendsEventsClient />
         </div>
       )}
     </main>

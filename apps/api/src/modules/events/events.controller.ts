@@ -15,6 +15,11 @@ export class EventsController {
     return this.eventsService.listFavorites(userId);
   }
 
+  @Get("friends")
+  listFriendsEvents(@CurrentUserId() userId: string) {
+    return this.eventsService.listFriendsEvents(userId);
+  }
+
   @Get()
   @Public()
   listEvents(

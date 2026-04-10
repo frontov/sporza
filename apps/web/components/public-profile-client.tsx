@@ -82,6 +82,37 @@ export function PublicProfileClient({ username }: PublicProfileClientProps) {
           <p>{profile.bio ?? "Пользователь пока не заполнил bio."}</p>
         </SectionCard>
       </div>
+
+      <div className="mt-6">
+        <SectionCard title="События пользователя">
+          {profile.events.length ? (
+            <div className="space-y-3">
+              {profile.events.map((event) => (
+                <div key={event.id} className="rounded-2xl bg-sky p-4">
+                  <div className="font-semibold text-ink">{event.title}</div>
+                  <div className="mt-1 text-xs text-slate-500">
+                    {new Date(event.startsAt).toLocaleDateString("ru-RU")} • {[event.region, event.city].filter(Boolean).join(" • ")}
+                  </div>
+                  <div className="mt-2 text-sm text-slate-600">
+                    {event.participationStatus === "going"
+                      ? "Участвует"
+                      : event.participationStatus === "interested"
+                        ? "Интересуется"
+                        : event.isFavorite
+                          ? "Сохранил в избранное"
+                          : "Событие добавлено"}
+                  </div>
+                  <Link className="mt-3 inline-block text-sm font-semibold text-coral" href={`/events/${event.id}`}>
+                    Открыть событие
+                  </Link>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p>Пользователь пока не добавлял события.</p>
+          )}
+        </SectionCard>
+      </div>
     </main>
   );
 }

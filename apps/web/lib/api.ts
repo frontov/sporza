@@ -43,6 +43,7 @@ export interface FollowListResponse {
 export interface PublicProfile extends Profile {
   isFollowedByMe: boolean;
   activities: Activity[];
+  events: EventItem[];
 }
 
 export interface Activity {
@@ -155,6 +156,10 @@ export interface EventsResponse {
   pageSize: number;
   total: number;
   totalPages: number;
+}
+
+export interface FriendEventItem extends EventItem {
+  friend: FavoriteFriend;
 }
 
 export interface StravaConnection {
@@ -459,6 +464,9 @@ export const api = {
   },
   getFavoriteEvents(accessToken: string) {
     return request<{ items: EventItem[] }>("/events/favorites", undefined, accessToken);
+  },
+  getFriendsEvents(accessToken: string) {
+    return request<{ items: FriendEventItem[] }>("/events/friends", undefined, accessToken);
   },
   getEvent(eventId: string, accessToken?: string) {
     return request<EventItem>(`/events/${eventId}`, undefined, accessToken);

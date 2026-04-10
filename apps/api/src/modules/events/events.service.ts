@@ -423,6 +423,66 @@ export class EventsService {
     };
   }
 
+  async listFriendsEvents(userId: string) {
+    await this.ensureFreshEventsCache();
+    await this.ensureFavoritesSupport();
+
+    const result = await this.databaseService.query<
+      EventRow & {
+        friend_user_id: string;
+        friend_username: string;
+        friend_full_name: string;
+        friend_avatar_url: string | null;
+      }
+    >(
+      `
+        SELECT
+          events.id,
+          title,
+          description,
+          sport_type,
+          region,
+          city,
+          venue,
+          starts_at,
+          registration_url,
+          source_url,
+          image_url,
+          source_name,
+          source_event_id,
+          ep.status AS participation_status,
+          TRUE AS is_favorite,
+          p.user_id AS friend_user_id,
+          p.username AS friend_username,
+          p.full_name AS friend_full_name,
+          p.avatar_url AS friend_avatar_url
+        FROM follows f
+        JOIN event_favorites ef ON ef.user_id = f.followee_id
+        JOIN events ON events.id = ef.event_id
+        JOIN profiles p ON p.user_id = f.followee_id
+        LEFT JOIN event_participations ep ON ep.event_id = events.id AND ep.user_id = f.followee_id
+        WHERE f.follower_id = $1
+          AND events.is_hidden = FALSE
+          AND events.is_archived = FALSE
+        ORDER BY ef.created_at DESC, starts_at ASC
+        LIMIT 100
+      `,
+      [userId],
+    );
+
+    return {
+      items: result.rows.map((row) => ({
+        ...this.mapEvent(row),
+        friend: {
+          userId: row.friend_user_id,
+          username: row.friend_username,
+          fullName: row.friend_full_name,
+          avatarUrl: row.friend_avatar_url,
+        },
+      })),
+    };
+  }
+
   async addFavorite(userId: string, eventId: string) {
     await this.ensureFavoritesSupport();
     await this.ensureEventExists(eventId);
