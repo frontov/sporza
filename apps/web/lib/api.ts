@@ -127,6 +127,26 @@ export interface EventItem {
   sourceEventId: string;
   participationStatus: "interested" | "going" | null;
   isFavorite: boolean;
+  favoriteFriends: FavoriteFriend[];
+  favoriteFriendsCount: number;
+}
+
+export interface FavoriteFriend {
+  userId: string;
+  username: string;
+  fullName: string;
+  avatarUrl: string | null;
+}
+
+export interface EventChatMessage {
+  id: string;
+  eventId: string;
+  userId: string;
+  username: string;
+  fullName: string;
+  avatarUrl: string | null;
+  body: string;
+  createdAt: string;
 }
 
 export interface EventsResponse {
@@ -436,6 +456,19 @@ export const api = {
   },
   getEvent(eventId: string, accessToken?: string) {
     return request<EventItem>(`/events/${eventId}`, undefined, accessToken);
+  },
+  getEventChat(eventId: string, accessToken?: string) {
+    return request<{ items: EventChatMessage[] }>(`/events/${eventId}/chat`, undefined, accessToken);
+  },
+  createEventChatMessage(accessToken: string, eventId: string, body: string) {
+    return request<EventChatMessage>(
+      `/events/${eventId}/chat`,
+      {
+        method: "POST",
+        body: JSON.stringify({ body }),
+      },
+      accessToken,
+    );
   },
   addFavoriteEvent(accessToken: string, eventId: string) {
     return request<{ userId: string; eventId: string; isFavorite: boolean }>(

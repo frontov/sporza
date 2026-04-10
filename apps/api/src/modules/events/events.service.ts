@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 
 import { DatabaseService } from "../../infrastructure/database/database.service";
@@ -28,6 +28,26 @@ interface EventRow {
   source_event_id: string;
   participation_status?: "interested" | "going" | null;
   is_favorite?: boolean | null;
+}
+
+interface FavoriteFriendRow {
+  event_id: string;
+  user_id: string;
+  username: string;
+  full_name: string;
+  avatar_url: string | null;
+  total_count: string;
+}
+
+interface EventChatRow {
+  id: string;
+  event_id: string;
+  user_id: string;
+  body: string;
+  created_at: Date | string;
+  username: string;
+  full_name: string;
+  avatar_url: string | null;
 }
 
 interface EventSyncRunRow {
@@ -88,6 +108,7 @@ export class EventsService {
   async list(filters: EventFilters, userId?: string) {
     await this.ensureFreshEventsCache();
     await this.ensureFavoritesSupport();
+    await this.ensureDiscussionSupport();
 
     const filterParams: unknown[] = [];
     const where = ["is_hidden = FALSE", "is_archived = FALSE"];
@@ -172,6 +193,11 @@ export class EventsService {
 
     const total = Number(countResult.rows[0]?.total ?? "0");
 
+    const items = result.rows.map((row: EventRow) => this.mapEvent(row));
+    const favoriteFriendsByEvent = userId
+      ? await this.getFavoriteFriendsPreview(userId, items.map((item) => item.id))
+      : new Map<string, { count: number; items: Array<Record<string, unknown>> }>();
+
     return {
       filters: {
         sport: filters.sport,
@@ -183,13 +209,18 @@ export class EventsService {
       pageSize,
       total,
       totalPages: Math.max(1, Math.ceil(total / pageSize)),
-      items: result.rows.map((row: EventRow) => this.mapEvent(row)),
+      items: items.map((item) => ({
+        ...item,
+        favoriteFriends: favoriteFriendsByEvent.get(item.id)?.items ?? [],
+        favoriteFriendsCount: favoriteFriendsByEvent.get(item.id)?.count ?? 0,
+      })),
     };
   }
 
   async getOne(eventId: string, userId?: string) {
     await this.ensureFreshEventsCache();
     await this.ensureFavoritesSupport();
+    await this.ensureDiscussionSupport();
 
     const result = await this.databaseService.query<EventRow>(
       `
@@ -223,7 +254,95 @@ export class EventsService {
       throw new NotFoundException("Event not found");
     }
 
-    return this.mapEvent(row);
+    const event = this.mapEvent(row);
+    const favoriteFriendsByEvent = userId
+      ? await this.getFavoriteFriendsPreview(userId, [eventId])
+      : new Map<string, { count: number; items: Array<Record<string, unknown>> }>();
+
+    return {
+      ...event,
+      favoriteFriends: favoriteFriendsByEvent.get(eventId)?.items ?? [],
+      favoriteFriendsCount: favoriteFriendsByEvent.get(eventId)?.count ?? 0,
+    };
+  }
+
+  async listChatMessages(eventId: string) {
+    await this.ensureDiscussionSupport();
+    await this.ensureEventExists(eventId);
+
+    const result = await this.databaseService.query<EventChatRow>(
+      `
+        SELECT
+          ec.id,
+          ec.event_id,
+          ec.user_id,
+          ec.body,
+          ec.created_at,
+          p.username,
+          p.full_name,
+          p.avatar_url
+        FROM event_comments ec
+        JOIN profiles p ON p.user_id = ec.user_id
+        WHERE ec.event_id = $1 AND ec.is_hidden = FALSE
+        ORDER BY ec.created_at ASC
+      `,
+      [eventId],
+    );
+
+    return {
+      items: result.rows.map((row) => ({
+        id: row.id,
+        eventId: row.event_id,
+        userId: row.user_id,
+        username: row.username,
+        fullName: row.full_name,
+        avatarUrl: row.avatar_url,
+        body: row.body,
+        createdAt: new Date(row.created_at).toISOString(),
+      })),
+    };
+  }
+
+  async createChatMessage(userId: string, eventId: string, body: string) {
+    await this.ensureDiscussionSupport();
+    await this.ensureEventExists(eventId);
+
+    const trimmed = body.trim();
+
+    if (!trimmed) {
+      throw new BadRequestException("Message body is required");
+    }
+
+    const result = await this.databaseService.query<EventChatRow>(
+      `
+        INSERT INTO event_comments (event_id, user_id, body)
+        VALUES ($1, $2, $3)
+        RETURNING id, event_id, user_id, body, created_at
+      `,
+      [eventId, userId, trimmed],
+    );
+
+    const inserted = result.rows[0];
+    const profileResult = await this.databaseService.query<{
+      username: string;
+      full_name: string;
+      avatar_url: string | null;
+    }>(
+      `SELECT username, full_name, avatar_url FROM profiles WHERE user_id = $1`,
+      [userId],
+    );
+    const profile = profileResult.rows[0];
+
+    return {
+      id: inserted.id,
+      eventId: inserted.event_id,
+      userId: inserted.user_id,
+      username: profile?.username ?? "",
+      fullName: profile?.full_name ?? "",
+      avatarUrl: profile?.avatar_url ?? null,
+      body: inserted.body,
+      createdAt: new Date(inserted.created_at).toISOString(),
+    };
   }
 
   async setParticipation(userId: string, eventId: string, status: string) {
@@ -544,6 +663,25 @@ export class EventsService {
     `);
   }
 
+  private async ensureDiscussionSupport() {
+    await this.databaseService.query(`
+      CREATE TABLE IF NOT EXISTS event_comments (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        event_id UUID NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        body TEXT NOT NULL,
+        is_hidden BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+
+    await this.databaseService.query(`
+      CREATE INDEX IF NOT EXISTS idx_event_comments_event_created_at
+      ON event_comments (event_id, created_at ASC)
+    `);
+  }
+
   private async ensureEventExists(eventId: string) {
     const result = await this.databaseService.query<{ id: string }>(
       `SELECT id FROM events WHERE id = $1 AND is_hidden = FALSE AND is_archived = FALSE`,
@@ -705,5 +843,57 @@ export class EventsService {
       participationStatus: row.participation_status ?? null,
       isFavorite: Boolean(row.is_favorite),
     };
+  }
+
+  private async getFavoriteFriendsPreview(userId: string, eventIds: string[]) {
+    if (!eventIds.length) {
+      return new Map<string, { count: number; items: Array<Record<string, unknown>> }>();
+    }
+
+    const result = await this.databaseService.query<FavoriteFriendRow>(
+      `
+        SELECT
+          ranked.event_id,
+          ranked.user_id,
+          ranked.username,
+          ranked.full_name,
+          ranked.avatar_url,
+          ranked.total_count
+        FROM (
+          SELECT
+            ef.event_id,
+            ef.user_id,
+            p.username,
+            p.full_name,
+            p.avatar_url,
+            COUNT(*) OVER (PARTITION BY ef.event_id)::text AS total_count,
+            ROW_NUMBER() OVER (PARTITION BY ef.event_id ORDER BY ef.created_at DESC) AS rn
+          FROM event_favorites ef
+          JOIN follows f ON f.followee_id = ef.user_id
+          JOIN profiles p ON p.user_id = ef.user_id
+          WHERE f.follower_id = $1
+            AND ef.event_id = ANY($2::uuid[])
+        ) ranked
+        WHERE ranked.rn <= 3
+        ORDER BY ranked.event_id, ranked.rn
+      `,
+      [userId, eventIds],
+    );
+
+    const byEvent = new Map<string, { count: number; items: Array<Record<string, unknown>> }>();
+
+    for (const row of result.rows) {
+      const current = byEvent.get(row.event_id) ?? { count: Number(row.total_count ?? "0"), items: [] };
+      current.count = Number(row.total_count ?? "0");
+      current.items.push({
+        userId: row.user_id,
+        username: row.username,
+        fullName: row.full_name,
+        avatarUrl: row.avatar_url,
+      });
+      byEvent.set(row.event_id, current);
+    }
+
+    return byEvent;
   }
 }

@@ -79,11 +79,41 @@ export function useEvents(accessToken: string | null) {
     }
   }
 
+  async function toggleFavorite(eventId: string) {
+    if (!accessToken) {
+      setError("Чтобы сохранять события, сначала войдите в аккаунт.");
+      return;
+    }
+
+    const targetEvent = items.find((item) => item.id === eventId);
+    if (!targetEvent) {
+      return;
+    }
+
+    setPendingEventId(eventId);
+    setError(null);
+
+    try {
+      if (targetEvent.isFavorite) {
+        await api.removeFavoriteEvent(accessToken, eventId);
+        setItems((current) => current.map((item) => (item.id === eventId ? { ...item, isFavorite: false } : item)));
+      } else {
+        await api.addFavoriteEvent(accessToken, eventId);
+        setItems((current) => current.map((item) => (item.id === eventId ? { ...item, isFavorite: true } : item)));
+      }
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Не удалось обновить избранное");
+    } finally {
+      setPendingEventId(null);
+    }
+  }
+
   return {
     items,
     error,
     pendingEventId,
     toggleParticipateGoing,
+    toggleFavorite,
     page,
     pageSize,
     total,

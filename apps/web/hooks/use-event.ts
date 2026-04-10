@@ -2,18 +2,19 @@
 
 import { useEffect, useState } from "react";
 
-import { api, EventItem } from "../lib/api";
+import { api, EventChatMessage, EventItem } from "../lib/api";
 
 export function useEvent(eventId: string, accessToken: string | null) {
   const [event, setEvent] = useState<EventItem | null>(null);
+  const [messages, setMessages] = useState<EventChatMessage[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isPending, setIsPending] = useState(false);
 
   useEffect(() => {
-    api
-      .getEvent(eventId, accessToken ?? undefined)
-      .then((response) => {
+    Promise.all([api.getEvent(eventId, accessToken ?? undefined), api.getEventChat(eventId, accessToken ?? undefined)])
+      .then(([response, chat]) => {
         setEvent(response);
+        setMessages(chat.items);
         setError(null);
       })
       .catch((requestError) => {
@@ -59,10 +60,62 @@ export function useEvent(eventId: string, accessToken: string | null) {
     }
   }
 
+  async function toggleFavorite() {
+    if (!accessToken) {
+      setError("Чтобы добавить событие в избранное, войдите в аккаунт.");
+      return;
+    }
+
+    if (!event) {
+      return;
+    }
+
+    setIsPending(true);
+    setError(null);
+
+    try {
+      if (event.isFavorite) {
+        await api.removeFavoriteEvent(accessToken, event.id);
+        setEvent({ ...event, isFavorite: false });
+      } else {
+        await api.addFavoriteEvent(accessToken, event.id);
+        setEvent({ ...event, isFavorite: true });
+      }
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Не удалось обновить избранное");
+    } finally {
+      setIsPending(false);
+    }
+  }
+
+  async function sendMessage(body: string) {
+    if (!accessToken) {
+      setError("Чтобы писать в обсуждение, войдите в аккаунт.");
+      return false;
+    }
+
+    setIsPending(true);
+    setError(null);
+
+    try {
+      const next = await api.createEventChatMessage(accessToken, eventId, body);
+      setMessages((current) => [...current, next]);
+      return true;
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Не удалось отправить сообщение");
+      return false;
+    } finally {
+      setIsPending(false);
+    }
+  }
+
   return {
     event,
+    messages,
     error,
     isPending,
     toggleParticipateGoing,
+    toggleFavorite,
+    sendMessage,
   };
 }

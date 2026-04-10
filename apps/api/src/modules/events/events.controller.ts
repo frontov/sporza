@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Put, Query } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Post, Put, Query } from "@nestjs/common";
 
 import { CurrentUserId } from "../../common/current-user";
 import { OptionalUser } from "../../common/current-user";
@@ -43,6 +43,21 @@ export class EventsController {
   @Public()
   getEvent(@Param("eventId") eventId: string, @OptionalUser() user: { userId: string } | null) {
     return this.eventsService.getOne(eventId, user?.userId);
+  }
+
+  @Get(":eventId/chat")
+  @Public()
+  getChat(@Param("eventId") eventId: string) {
+    return this.eventsService.listChatMessages(eventId);
+  }
+
+  @Post(":eventId/chat")
+  createChatMessage(
+    @CurrentUserId() userId: string,
+    @Param("eventId") eventId: string,
+    @Body("body") body: string,
+  ) {
+    return this.eventsService.createChatMessage(userId, eventId, body);
   }
 
   @Put(":eventId/favorite")

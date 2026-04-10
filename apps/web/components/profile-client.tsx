@@ -2,9 +2,8 @@
 
 import { ChangeEvent, FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
 
-import { api, ActivitiesResponse, Profile, StravaStatusResponse } from "../lib/api";
+import { api, ActivitiesResponse, Profile } from "../lib/api";
 import { useProfileSearch } from "../hooks/use-profile-search";
 import { MetricPill } from "./metric-pill";
 import { SectionCard } from "./section-card";
@@ -13,20 +12,15 @@ import { useAuth } from "./auth-provider";
 import { ConnectionsClient } from "./connections-client";
 
 export function ProfileClient() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
   const { accessToken, isReady, user } = useAuth();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [activities, setActivities] = useState<ActivitiesResponse["items"]>([]);
-  const [strava, setStrava] = useState<StravaStatusResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
-  const [isConnectingStrava, setIsConnectingStrava] = useState(false);
-  const [isSyncingStrava, setIsSyncingStrava] = useState(false);
   const [form, setForm] = useState({
     fullName: "",
     city: "",
@@ -40,11 +34,10 @@ export function ProfileClient() {
       return;
     }
 
-    Promise.all([api.getMyProfile(accessToken), api.getMyActivities(accessToken), api.getStravaStatus(accessToken)])
-      .then(([profileResponse, activitiesResponse, stravaResponse]) => {
+    Promise.all([api.getMyProfile(accessToken), api.getMyActivities(accessToken)])
+      .then(([profileResponse, activitiesResponse]) => {
         setProfile(profileResponse);
         setActivities(activitiesResponse.items);
-        setStrava(stravaResponse);
         setForm({
           fullName: profileResponse.fullName,
           city: profileResponse.city ?? "",
@@ -56,39 +49,6 @@ export function ProfileClient() {
         setError(requestError instanceof Error ? requestError.message : "Не удалось загрузить профиль");
       });
   }, [accessToken]);
-
-  useEffect(() => {
-    if (!accessToken) {
-      return;
-    }
-
-    const code = searchParams.get("code");
-    const state = searchParams.get("state");
-    const scope = searchParams.get("scope");
-
-    if (!code || !state || !scope) {
-      return;
-    }
-
-    setIsConnectingStrava(true);
-    setError(null);
-    setSuccessMessage(null);
-
-    api
-      .connectStrava(accessToken, { code, state })
-      .then(async () => {
-        setSuccessMessage("Strava подключена. Импорт старых тренировок уже запущен в фоне.");
-        const status = await api.getStravaStatus(accessToken);
-        setStrava(status);
-        router.replace("/profile");
-      })
-      .catch((requestError) => {
-        setError(requestError instanceof Error ? requestError.message : "Не удалось подключить Strava");
-      })
-      .finally(() => {
-        setIsConnectingStrava(false);
-      });
-  }, [accessToken, router, searchParams]);
 
   function onFieldChange(field: "fullName" | "city" | "bio" | "sports", value: string) {
     setForm((current) => ({
@@ -158,64 +118,6 @@ export function ProfileClient() {
     }
   }
 
-  async function onConnectStrava() {
-    if (!accessToken) {
-      return;
-    }
-
-    setIsConnectingStrava(true);
-    setError(null);
-
-    try {
-      const response = await api.getStravaConnectUrl(accessToken);
-      window.location.href = response.connectUrl;
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Не удалось начать подключение Strava");
-      setIsConnectingStrava(false);
-    }
-  }
-
-  async function onSyncStrava() {
-    if (!accessToken) {
-      return;
-    }
-
-    setIsSyncingStrava(true);
-    setError(null);
-    setSuccessMessage(null);
-
-    try {
-      await api.syncStrava(accessToken);
-      setSuccessMessage("Фоновая синхронизация Strava поставлена в очередь.");
-      const status = await api.getStravaStatus(accessToken);
-      setStrava(status);
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Не удалось запустить синхронизацию Strava");
-    } finally {
-      setIsSyncingStrava(false);
-    }
-  }
-
-  async function onDisconnectStrava() {
-    if (!accessToken) {
-      return;
-    }
-
-    setError(null);
-    setSuccessMessage(null);
-
-    try {
-      await api.disconnectStrava(accessToken);
-      setStrava({
-        connected: false,
-        connection: null,
-      });
-      setSuccessMessage("Strava отключена.");
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Не удалось отключить Strava");
-    }
-  }
-
   if (!isReady) {
     return <main className="mx-auto max-w-4xl px-4 py-6 sm:px-6">Загрузка профиля...</main>;
   }
@@ -231,7 +133,7 @@ export function ProfileClient() {
   return (
     <main className="mx-auto max-w-4xl px-4 py-6 sm:px-6">
       <section className="rounded-[32px] bg-white/80 p-6 shadow-[0_20px_60px_rgba(17,42,70,0.08)]">
-        <p className="text-xs font-semibold uppercase tracking-[0.25em] text-coral">Profile MVP</p>
+        <p className="text-xs font-semibold uppercase tracking-[0.25em] text-coral">Профиль</p>
         <div className="mt-4 flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex items-center gap-4">
             {profile?.avatarUrl ? (
@@ -321,63 +223,19 @@ export function ProfileClient() {
       ) : null}
 
       <div className="mt-6">
-        <SectionCard title="Strava">
-          {strava?.connected && strava.connection ? (
-            <div className="space-y-4">
-              <p>
-                Подключён аккаунт{" "}
-                <span className="font-semibold text-ink">
-                  {strava.connection.athleteFullName || strava.connection.athleteUsername || `#${strava.connection.athleteId}`}
-                </span>
-                .
-              </p>
-              <p className="text-sm text-slate-600">
-                Последняя синхронизация:{" "}
-                {strava.connection.lastSyncFinishedAt
-                  ? new Date(strava.connection.lastSyncFinishedAt).toLocaleString("ru-RU")
-                  : "ещё не завершалась"}
-              </p>
-              <p className="text-sm text-slate-600">
-                Последняя активность из Strava:{" "}
-                {strava.connection.lastSyncedActivityAt
-                  ? new Date(strava.connection.lastSyncedActivityAt).toLocaleString("ru-RU")
-                  : "пока не импортирована"}
-              </p>
-              {strava.connection.lastError ? <p className="text-sm text-red-600">{strava.connection.lastError}</p> : null}
-              <div className="flex flex-col gap-3 sm:flex-row">
-                <button
-                  className="rounded-full bg-coral px-4 py-3 text-sm font-semibold text-white"
-                  disabled={isSyncingStrava}
-                  onClick={onSyncStrava}
-                  type="button"
-                >
-                  {isSyncingStrava ? "Ставим sync в очередь..." : "Синхронизировать сейчас"}
-                </button>
-                <button
-                  className="rounded-full border border-ink/10 px-4 py-3 text-sm font-semibold text-ink"
-                  onClick={onDisconnectStrava}
-                  type="button"
-                >
-                  Отключить Strava
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <p>
-                Подключите Strava, и мы в фоне подтянем старые тренировки после авторизации, а затем будем регулярно
-                синхронизировать новые активности в базу.
-              </p>
-              <button
-                className="rounded-full bg-coral px-4 py-3 text-sm font-semibold text-white"
-                disabled={isConnectingStrava}
-                onClick={onConnectStrava}
-                type="button"
-              >
-                {isConnectingStrava ? "Переходим в Strava..." : "Подключить Strava"}
-              </button>
-            </div>
-          )}
+        <SectionCard title="Социальный фокус">
+          <p className="text-sm leading-6 text-slate-600">
+            В этом MVP акцент сделан на событиях: сохраняйте старты в избранное, смотрите, что выбрали друзья, и обсуждайте
+            участие прямо на странице события.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-3">
+            <Link className="rounded-full bg-coral px-4 py-3 text-sm font-semibold text-white" href="/events">
+              Открыть события
+            </Link>
+            <Link className="rounded-full border border-ink/10 px-4 py-3 text-sm font-semibold text-ink" href="/imports">
+              Импорт тренировок
+            </Link>
+          </div>
         </SectionCard>
       </div>
 
