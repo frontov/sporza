@@ -20,6 +20,7 @@ export interface Profile {
   username: string;
   fullName: string;
   avatarUrl: string | null;
+  region: string | null;
   city: string | null;
   bio: string | null;
   sports: string[];
@@ -158,9 +159,14 @@ export interface EventsResponse {
   pageSize: number;
   total: number;
   totalPages: number;
+  availableRegions: string[];
   availableCities: string[];
   popularCities: string[];
   availableCategories: string[];
+}
+
+export interface RegionsResponse {
+  items: string[];
 }
 
 export interface FriendEventItem extends EventItem {
@@ -345,6 +351,7 @@ export const api = {
     accessToken: string,
     payload: {
       fullName?: string;
+      region?: string | null;
       city?: string | null;
       bio?: string | null;
       sports?: string[];
@@ -375,6 +382,9 @@ export const api = {
     const params = new URLSearchParams();
     params.set("query", query);
     return request<ProfileSearchResponse>(`/profiles?${params.toString()}`);
+  },
+  getRegions() {
+    return request<RegionsResponse>("/regions");
   },
   getPublicProfile(username: string, accessToken?: string) {
     return request<PublicProfile>(`/profiles/${encodeURIComponent(username)}`, undefined, accessToken);

@@ -32,12 +32,31 @@ CREATE TABLE profiles (
   username VARCHAR(32) NOT NULL UNIQUE,
   full_name VARCHAR(120) NOT NULL,
   avatar_url TEXT,
+  region VARCHAR(120),
   city VARCHAR(120),
   bio TEXT,
   sports JSONB NOT NULL DEFAULT '[]'::jsonb,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE TABLE regions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name VARCHAR(120) NOT NULL UNIQUE,
+  slug VARCHAR(160) NOT NULL UNIQUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE cities (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  region_id UUID REFERENCES regions(id) ON DELETE CASCADE,
+  name VARCHAR(120) NOT NULL,
+  slug VARCHAR(160) NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (region_id, name)
+);
+
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS region_id UUID REFERENCES regions(id) ON DELETE SET NULL;
 
 CREATE TABLE sessions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -173,7 +192,9 @@ CREATE TABLE events (
   description TEXT,
   sport_type VARCHAR(50) NOT NULL,
   region VARCHAR(120),
+  region_id UUID REFERENCES regions(id) ON DELETE SET NULL,
   city VARCHAR(120),
+  city_id UUID REFERENCES cities(id) ON DELETE SET NULL,
   venue VARCHAR(200),
   starts_at TIMESTAMPTZ NOT NULL,
   registration_url TEXT,
@@ -258,6 +279,9 @@ CREATE INDEX idx_import_jobs_user_status ON import_jobs (user_id, status, create
 CREATE INDEX idx_comments_activity_created_at ON comments (activity_id, created_at DESC);
 CREATE INDEX idx_events_starts_at ON events (starts_at ASC);
 CREATE INDEX idx_events_filters ON events (sport_type, region, starts_at ASC);
+CREATE INDEX idx_profiles_region_id ON profiles (region_id);
+CREATE INDEX idx_events_region_id ON events (region_id);
+CREATE INDEX idx_events_city_id ON events (city_id);
 CREATE INDEX idx_event_favorites_user_created_at ON event_favorites (user_id, created_at DESC);
 CREATE INDEX idx_event_sync_runs_created_at ON event_sync_runs (created_at DESC);
 CREATE INDEX idx_notifications_user_created_at ON notifications (user_id, created_at DESC);

@@ -10,6 +10,7 @@ interface ProfileRow {
   username: string;
   full_name: string;
   avatar_url: string | null;
+  region: string | null;
   city: string | null;
   bio: string | null;
   sports: string[] | null;
@@ -42,35 +43,42 @@ export class ProfilesService {
   ) {}
 
   async getCurrentProfile(userId: string) {
+    await this.ensureLocationCatalogSupport();
     return this.getProfileByUserId(userId);
   }
 
   async updateCurrentProfile(userId: string, dto: UpdateProfileDto) {
+    await this.ensureLocationCatalogSupport();
     const current = await this.getProfileByUserId(userId);
 
     const fullName = dto.fullName ?? current.fullName;
+    const region = dto.region ?? current.region;
     const city = dto.city ?? current.city;
     const bio = dto.bio ?? current.bio;
     const sports = dto.sports ?? current.sports;
+    const regionId = region ? await this.resolveRegionId(region) : null;
 
     const result = await this.databaseService.query<ProfileRow>(
       `
         UPDATE profiles
         SET full_name = $2,
-            city = $3,
-            bio = $4,
-            sports = $5::jsonb,
+            region = $3,
+            region_id = $4,
+            city = $5,
+            bio = $6,
+            sports = $7::jsonb,
             updated_at = NOW()
         WHERE user_id = $1
-        RETURNING user_id, username, full_name, avatar_url, city, bio, sports
+        RETURNING user_id, username, full_name, avatar_url, region, city, bio, sports
       `,
-      [userId, fullName, city, bio, JSON.stringify(sports)],
+      [userId, fullName, region, regionId, city, bio, JSON.stringify(sports)],
     );
 
     return this.mapProfile(result.rows[0]);
   }
 
   async uploadAvatar(userId: string, file: { buffer: Buffer; mimetype?: string; originalname: string }) {
+    await this.ensureLocationCatalogSupport();
     await this.getProfileByUserId(userId);
 
     const extension = this.resolveAvatarExtension(file.originalname, file.mimetype);
@@ -86,7 +94,7 @@ export class ProfilesService {
         SET avatar_url = $2,
             updated_at = NOW()
         WHERE user_id = $1
-        RETURNING user_id, username, full_name, avatar_url, city, bio, sports
+        RETURNING user_id, username, full_name, avatar_url, region, city, bio, sports
       `,
       [userId, avatarUrl],
     );
@@ -95,6 +103,7 @@ export class ProfilesService {
   }
 
   async getPublicProfile(username: string, currentUserId?: string) {
+    await this.ensureLocationCatalogSupport();
     const result = await this.databaseService.query<ProfileRow>(
       `
         SELECT
@@ -102,6 +111,7 @@ export class ProfilesService {
           username,
           full_name,
           avatar_url,
+          region,
           city,
           bio,
           sports,
@@ -219,6 +229,7 @@ export class ProfilesService {
   }
 
   async searchProfiles(query: string) {
+    await this.ensureLocationCatalogSupport();
     const normalizedQuery = query.trim();
 
     if (!normalizedQuery) {
@@ -228,9 +239,9 @@ export class ProfilesService {
     const like = `%${normalizedQuery}%`;
     const result = await this.databaseService.query<ProfileRow>(
       `
-        SELECT user_id, username, full_name, avatar_url, city, bio, sports
+        SELECT user_id, username, full_name, avatar_url, region, city, bio, sports
         FROM profiles
-        WHERE username ILIKE $1 OR full_name ILIKE $1 OR city ILIKE $1
+        WHERE username ILIKE $1 OR full_name ILIKE $1 OR city ILIKE $1 OR region ILIKE $1
         ORDER BY
           CASE WHEN username ILIKE $2 THEN 0 ELSE 1 END,
           full_name ASC
@@ -244,10 +255,26 @@ export class ProfilesService {
     };
   }
 
+  async listRegions() {
+    await this.ensureLocationCatalogSupport();
+
+    const result = await this.databaseService.query<{ name: string }>(
+      `
+        SELECT name
+        FROM regions
+        ORDER BY name ASC
+      `,
+    );
+
+    return {
+      items: result.rows.map((row) => row.name),
+    };
+  }
+
   private async getProfileByUserId(userId: string) {
     const result = await this.databaseService.query<ProfileRow>(
       `
-        SELECT user_id, username, full_name, avatar_url, city, bio, sports
+        SELECT user_id, username, full_name, avatar_url, region, city, bio, sports
         FROM profiles
         WHERE user_id = $1
       `,
@@ -269,10 +296,119 @@ export class ProfilesService {
       username: row.username,
       fullName: row.full_name,
       avatarUrl: row.avatar_url,
+      region: row.region,
       city: row.city,
       bio: row.bio,
       sports: row.sports ?? [],
     };
+  }
+
+  private async ensureLocationCatalogSupport() {
+    await this.databaseService.query(`
+      CREATE TABLE IF NOT EXISTS regions (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        name VARCHAR(120) NOT NULL UNIQUE,
+        slug VARCHAR(160) NOT NULL UNIQUE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+
+    await this.databaseService.query(`
+      CREATE TABLE IF NOT EXISTS cities (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        region_id UUID REFERENCES regions(id) ON DELETE CASCADE,
+        name VARCHAR(120) NOT NULL,
+        slug VARCHAR(160) NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE (region_id, name)
+      )
+    `);
+
+    await this.databaseService.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS region VARCHAR(120)`);
+    await this.databaseService.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS region_id UUID REFERENCES regions(id) ON DELETE SET NULL`);
+    await this.databaseService.query(`ALTER TABLE events ADD COLUMN IF NOT EXISTS region_id UUID REFERENCES regions(id) ON DELETE SET NULL`);
+    await this.databaseService.query(`ALTER TABLE events ADD COLUMN IF NOT EXISTS city_id UUID REFERENCES cities(id) ON DELETE SET NULL`);
+    await this.databaseService.query(`CREATE INDEX IF NOT EXISTS idx_profiles_region_id ON profiles (region_id)`);
+    await this.databaseService.query(`CREATE INDEX IF NOT EXISTS idx_events_region_id ON events (region_id)`);
+    await this.databaseService.query(`CREATE INDEX IF NOT EXISTS idx_events_city_id ON events (city_id)`);
+
+    await this.databaseService.query(`
+      INSERT INTO regions (name, slug)
+      SELECT DISTINCT source.region_name, source.region_slug
+      FROM (
+        SELECT region AS region_name, LOWER(REGEXP_REPLACE(region, '[^[:alnum:]а-яА-Я]+', '-', 'g')) AS region_slug
+        FROM events
+        WHERE region IS NOT NULL AND region <> ''
+        UNION
+        SELECT region AS region_name, LOWER(REGEXP_REPLACE(region, '[^[:alnum:]а-яА-Я]+', '-', 'g')) AS region_slug
+        FROM profiles
+        WHERE region IS NOT NULL AND region <> ''
+      ) source
+      ON CONFLICT (name) DO NOTHING
+    `);
+
+    await this.databaseService.query(`
+      UPDATE profiles p
+      SET region_id = r.id
+      FROM regions r
+      WHERE p.region IS NOT NULL
+        AND p.region <> ''
+        AND p.region_id IS NULL
+        AND r.name = p.region
+    `);
+
+    await this.databaseService.query(`
+      UPDATE events e
+      SET region_id = r.id
+      FROM regions r
+      WHERE e.region IS NOT NULL
+        AND e.region <> ''
+        AND e.region_id IS NULL
+        AND r.name = e.region
+    `);
+
+    await this.databaseService.query(`
+      INSERT INTO cities (region_id, name, slug)
+      SELECT DISTINCT r.id, e.city, LOWER(REGEXP_REPLACE(e.city, '[^[:alnum:]а-яА-Я]+', '-', 'g'))
+      FROM events e
+      JOIN regions r ON r.name = e.region
+      WHERE e.city IS NOT NULL
+        AND e.city <> ''
+      ON CONFLICT (region_id, name) DO NOTHING
+    `);
+
+    await this.databaseService.query(`
+      UPDATE events e
+      SET city_id = c.id
+      FROM regions r
+      JOIN cities c ON c.region_id = r.id AND c.name = e.city
+      WHERE e.city IS NOT NULL
+        AND e.city <> ''
+        AND e.city_id IS NULL
+        AND r.name = e.region
+    `);
+  }
+
+  private async resolveRegionId(regionName: string) {
+    const normalized = regionName.trim();
+
+    if (!normalized) {
+      return null;
+    }
+
+    const slug = normalized.toLowerCase().replace(/[^a-zа-я0-9]+/gi, "-").replace(/^-+|-+$/g, "");
+    const result = await this.databaseService.query<{ id: string }>(
+      `
+        INSERT INTO regions (name, slug)
+        VALUES ($1, $2)
+        ON CONFLICT (name)
+        DO UPDATE SET slug = EXCLUDED.slug
+        RETURNING id
+      `,
+      [normalized, slug || "region"],
+    );
+
+    return result.rows[0]?.id ?? null;
   }
 
   private resolveAvatarExtension(originalName: string, mimetype?: string) {

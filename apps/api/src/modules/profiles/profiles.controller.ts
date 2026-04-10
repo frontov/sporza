@@ -45,4 +45,10 @@ export class ProfilesController {
   searchProfiles(@Query("query") query?: string) {
     return this.profilesService.searchProfiles(query ?? "");
   }
+
+  @Get("regions")
+  @Public()
+  listRegions() {
+    return this.profilesService.listRegions();
+  }
 }

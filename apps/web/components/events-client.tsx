@@ -27,6 +27,7 @@ export function EventsClient() {
     totalPages,
     sort,
     filters,
+    availableRegions,
     availableCities,
     popularCities,
     availableCategories,
@@ -93,6 +94,21 @@ export function EventsClient() {
                 />
               </label>
               <div className="grid grid-cols-2 gap-3">
+                <label className="block">
+                  <span className="mb-1 block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Регион</span>
+                  <select
+                    className="w-full rounded-2xl border border-ink/10 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-coral/60"
+                    onChange={(event) => updateFilters({ region: event.target.value, cities: [] })}
+                    value={filters.region}
+                  >
+                    <option value="">Все регионы</option>
+                    {availableRegions.map((region) => (
+                      <option key={region} value={region}>
+                        {region}
+                      </option>
+                    ))}
+                  </select>
+                </label>
                 <label className="block">
                   <span className="mb-1 block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Дата от</span>
                   <input

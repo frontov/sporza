@@ -21,8 +21,10 @@ export function ProfileClient() {
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const [regions, setRegions] = useState<string[]>([]);
   const [form, setForm] = useState({
     fullName: "",
+    region: "",
     city: "",
     bio: "",
     sports: "",
@@ -34,12 +36,14 @@ export function ProfileClient() {
       return;
     }
 
-    Promise.all([api.getMyProfile(accessToken), api.getMyActivities(accessToken)])
-      .then(([profileResponse, activitiesResponse]) => {
+    Promise.all([api.getMyProfile(accessToken), api.getMyActivities(accessToken), api.getRegions()])
+      .then(([profileResponse, activitiesResponse, regionsResponse]) => {
         setProfile(profileResponse);
         setActivities(activitiesResponse.items);
+        setRegions(regionsResponse.items);
         setForm({
           fullName: profileResponse.fullName,
+          region: profileResponse.region ?? "",
           city: profileResponse.city ?? "",
           bio: profileResponse.bio ?? "",
           sports: profileResponse.sports.join(", "),
@@ -50,7 +54,7 @@ export function ProfileClient() {
       });
   }, [accessToken]);
 
-  function onFieldChange(field: "fullName" | "city" | "bio" | "sports", value: string) {
+  function onFieldChange(field: "fullName" | "region" | "city" | "bio" | "sports", value: string) {
     setForm((current) => ({
       ...current,
       [field]: value,
@@ -71,6 +75,7 @@ export function ProfileClient() {
     try {
       const updated = await api.updateMyProfile(accessToken, {
         fullName: form.fullName.trim(),
+        region: form.region.trim() || null,
         city: form.city.trim() || null,
         bio: form.bio.trim() || null,
         sports: form.sports
@@ -82,6 +87,7 @@ export function ProfileClient() {
       setProfile(updated);
       setForm({
         fullName: updated.fullName,
+        region: updated.region ?? "",
         city: updated.city ?? "",
         bio: updated.bio ?? "",
         sports: updated.sports.join(", "),
@@ -150,7 +156,7 @@ export function ProfileClient() {
             <div>
               <h1 className="font-display text-3xl text-ink">{profile?.fullName ?? user.fullName}</h1>
               <p className="mt-2 text-sm leading-6 text-slate-600">
-                {[profile?.city, ...(profile?.sports ?? [])].filter(Boolean).join(" • ") || "Профиль спортсмена"}
+                {[profile?.region, profile?.city, ...(profile?.sports ?? [])].filter(Boolean).join(" • ") || "Профиль спортсмена"}
               </p>
             </div>
           </div>
@@ -192,6 +198,21 @@ export function ProfileClient() {
                 placeholder="Имя"
                 value={form.fullName}
               />
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium text-slate-600">Регион</span>
+                <select
+                  className="w-full rounded-2xl border border-ink/10 px-4 py-3"
+                  onChange={(event) => onFieldChange("region", event.target.value)}
+                  value={form.region}
+                >
+                  <option value="">Не выбран</option>
+                  {regions.map((region) => (
+                    <option key={region} value={region}>
+                      {region}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <input
                 className="w-full rounded-2xl border border-ink/10 px-4 py-3"
                 onChange={(event) => onFieldChange("city", event.target.value)}

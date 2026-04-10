@@ -6,6 +6,7 @@ import { api, EventItem } from "../lib/api";
 
 export interface EventsFilterState {
   q: string;
+  region: string;
   cities: string[];
   categories: string[];
   dateFrom: string;
@@ -22,11 +23,15 @@ export function useEvents(accessToken: string | null) {
   const [sort, setSort] = useState<"date_asc" | "popular">("date_asc");
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
+  const [availableRegions, setAvailableRegions] = useState<string[]>([]);
   const [availableCities, setAvailableCities] = useState<string[]>([]);
   const [popularCities, setPopularCities] = useState<string[]>([]);
   const [availableCategories, setAvailableCategories] = useState<string[]>([]);
+  const [defaultRegion, setDefaultRegion] = useState("");
+  const [didApplyDefaultRegion, setDidApplyDefaultRegion] = useState(false);
   const [filters, setFilters] = useState<EventsFilterState>({
     q: "",
+    region: "",
     cities: [],
     categories: [],
     dateFrom: "",
@@ -35,10 +40,36 @@ export function useEvents(accessToken: string | null) {
   });
 
   useEffect(() => {
+    if (!accessToken) {
+      setDefaultRegion("");
+      setDidApplyDefaultRegion(true);
+      return;
+    }
+
+    api
+      .getMyProfile(accessToken)
+      .then((profile) => {
+        const region = profile.region ?? "";
+        setDefaultRegion(region);
+        setDidApplyDefaultRegion(true);
+        setFilters((current) => (current.region || !region ? current : { ...current, region }));
+      })
+      .catch(() => {
+        setDefaultRegion("");
+        setDidApplyDefaultRegion(true);
+      });
+  }, [accessToken]);
+
+  useEffect(() => {
+    if (!didApplyDefaultRegion) {
+      return;
+    }
+
     api
       .getEvents(
         {
           q: filters.q,
+          region: filters.region || undefined,
           cities: filters.cities,
           categories: filters.categories,
           dateFrom: filters.dateFrom,
@@ -54,6 +85,7 @@ export function useEvents(accessToken: string | null) {
         setItems(response.items);
         setTotal(response.total);
         setTotalPages(response.totalPages);
+        setAvailableRegions(response.availableRegions);
         setAvailableCities(response.availableCities);
         setPopularCities(response.popularCities);
         setAvailableCategories(response.availableCategories);
@@ -62,7 +94,7 @@ export function useEvents(accessToken: string | null) {
       .catch((requestError) => {
         setError(requestError instanceof Error ? requestError.message : "Не удалось загрузить события");
       });
-  }, [accessToken, filters, page, pageSize, sort]);
+  }, [accessToken, didApplyDefaultRegion, filters, page, pageSize, sort]);
 
   function updateFilters(next: EventsFilterState) {
     setPage(1);
@@ -73,6 +105,7 @@ export function useEvents(accessToken: string | null) {
     setPage(1);
     setFilters({
       q: "",
+      region: defaultRegion,
       cities: [],
       categories: [],
       dateFrom: "",
@@ -174,6 +207,7 @@ export function useEvents(accessToken: string | null) {
     total,
     totalPages,
     filters,
+    availableRegions,
     availableCities,
     popularCities,
     availableCategories,

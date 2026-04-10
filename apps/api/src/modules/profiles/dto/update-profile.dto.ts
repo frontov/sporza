@@ -9,6 +9,11 @@ export class UpdateProfileDto {
   @IsOptional()
   @IsString()
   @MaxLength(120)
+  region?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
   city?: string;
 
   @IsOptional()

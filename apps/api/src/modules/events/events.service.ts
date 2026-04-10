@@ -116,6 +116,7 @@ export class EventsService {
     await this.ensureFreshEventsCache();
     await this.ensureFavoritesSupport();
     await this.ensureDiscussionSupport();
+    await this.ensureLocationCatalogSupport();
 
     const filterParams: unknown[] = [];
     const where = ["is_hidden = FALSE", "is_archived = FALSE"];
@@ -241,9 +242,28 @@ export class EventsService {
     );
 
     const total = Number(countResult.rows[0]?.total ?? "0");
-    const facetResult = await this.databaseService.query<{ available_cities: string[] | null; available_categories: string[] | null }>(
+    const facetParams = filters.region ? [filters.region] : [];
+    const facetResult = await this.databaseService.query<{
+      available_regions: string[] | null;
+      available_cities: string[] | null;
+      available_categories: string[] | null;
+    }>(
       `
         SELECT
+          ARRAY(
+            SELECT region
+            FROM (
+              SELECT region, COUNT(*) AS region_count
+              FROM events
+              WHERE is_hidden = FALSE
+                AND is_archived = FALSE
+                AND region IS NOT NULL
+                AND region <> ''
+              GROUP BY region
+              ORDER BY region_count DESC, region ASC
+              LIMIT 30
+            ) ranked_regions
+          ) AS available_regions,
           ARRAY(
             SELECT city
             FROM (
@@ -251,6 +271,7 @@ export class EventsService {
               FROM events
               WHERE is_hidden = FALSE
                 AND is_archived = FALSE
+                ${filters.region ? "AND region = $1" : ""}
                 AND city IS NOT NULL
                 AND city <> ''
               GROUP BY city
@@ -272,12 +293,14 @@ export class EventsService {
             ) ranked_categories
           ) AS available_categories
       `,
+      facetParams,
     );
 
     const items = result.rows.map((row: EventRow) => this.mapEvent(row));
     const favoriteFriendsByEvent = userId
       ? await this.getFavoriteFriendsPreview(userId, items.map((item) => item.id))
       : new Map<string, { count: number; items: Array<Record<string, unknown>> }>();
+    const availableRegions = facetResult.rows[0]?.available_regions ?? [];
     const availableCities = facetResult.rows[0]?.available_cities ?? [];
     const availableCategories = facetResult.rows[0]?.available_categories ?? [];
 
@@ -297,6 +320,7 @@ export class EventsService {
       pageSize,
       total,
       totalPages: Math.max(1, Math.ceil(total / pageSize)),
+      availableRegions,
       availableCities,
       popularCities: availableCities.slice(0, 8),
       availableCategories,
@@ -312,6 +336,7 @@ export class EventsService {
     await this.ensureFreshEventsCache();
     await this.ensureFavoritesSupport();
     await this.ensureDiscussionSupport();
+    await this.ensureLocationCatalogSupport();
 
     const result = await this.databaseService.query<EventRow>(
       `
@@ -481,6 +506,7 @@ export class EventsService {
   async listFavorites(userId: string) {
     await this.ensureFreshEventsCache();
     await this.ensureFavoritesSupport();
+    await this.ensureLocationCatalogSupport();
 
     const result = await this.databaseService.query<EventRow>(
       `
@@ -517,6 +543,7 @@ export class EventsService {
   async listFriendsEvents(userId: string) {
     await this.ensureFreshEventsCache();
     await this.ensureFavoritesSupport();
+    await this.ensureLocationCatalogSupport();
 
     const result = await this.databaseService.query<
       EventRow & {
@@ -606,6 +633,7 @@ export class EventsService {
   }
 
   async syncExternalEvents() {
+    await this.ensureLocationCatalogSupport();
     const sourceName = "sporly";
     const syncRunResult = await this.databaseService.query<EventSyncRunRow>(
       `
@@ -625,6 +653,8 @@ export class EventsService {
         let updatedCount = 0;
 
         for (const event of externalEvents) {
+          const regionId = event.region ? await this.ensureRegion(client, event.region) : null;
+          const cityId = regionId && event.city ? await this.ensureCity(client, regionId, event.city) : null;
           const upsertResult = await client.query<{ inserted: boolean }>(
             `
               INSERT INTO events (
@@ -634,7 +664,9 @@ export class EventsService {
                 description,
                 sport_type,
                 region,
+                region_id,
                 city,
+                city_id,
                 venue,
                 starts_at,
                 registration_url,
@@ -644,14 +676,16 @@ export class EventsService {
                 is_hidden,
                 is_archived
               )
-              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb, FALSE, FALSE)
+              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::jsonb, FALSE, FALSE)
               ON CONFLICT (source_name, source_event_id)
               DO UPDATE SET
                 title = EXCLUDED.title,
                 description = EXCLUDED.description,
                 sport_type = EXCLUDED.sport_type,
                 region = EXCLUDED.region,
+                region_id = EXCLUDED.region_id,
                 city = EXCLUDED.city,
+                city_id = EXCLUDED.city_id,
                 venue = EXCLUDED.venue,
                 starts_at = EXCLUDED.starts_at,
                 registration_url = EXCLUDED.registration_url,
@@ -669,7 +703,9 @@ export class EventsService {
               event.description,
               event.sportType,
               event.region,
+              regionId,
               event.city,
+              cityId,
               event.venue,
               event.startsAt,
               event.registrationUrl,
@@ -831,6 +867,134 @@ export class EventsService {
       CREATE INDEX IF NOT EXISTS idx_event_comments_event_created_at
       ON event_comments (event_id, created_at ASC)
     `);
+  }
+
+  private async ensureLocationCatalogSupport() {
+    await this.databaseService.query(`
+      CREATE TABLE IF NOT EXISTS regions (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        name VARCHAR(120) NOT NULL UNIQUE,
+        slug VARCHAR(160) NOT NULL UNIQUE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+
+    await this.databaseService.query(`
+      CREATE TABLE IF NOT EXISTS cities (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        region_id UUID REFERENCES regions(id) ON DELETE CASCADE,
+        name VARCHAR(120) NOT NULL,
+        slug VARCHAR(160) NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE (region_id, name)
+      )
+    `);
+
+    await this.databaseService.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS region VARCHAR(120)`);
+    await this.databaseService.query(`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS region_id UUID REFERENCES regions(id) ON DELETE SET NULL`);
+    await this.databaseService.query(`ALTER TABLE events ADD COLUMN IF NOT EXISTS region_id UUID REFERENCES regions(id) ON DELETE SET NULL`);
+    await this.databaseService.query(`ALTER TABLE events ADD COLUMN IF NOT EXISTS city_id UUID REFERENCES cities(id) ON DELETE SET NULL`);
+    await this.databaseService.query(`CREATE INDEX IF NOT EXISTS idx_profiles_region_id ON profiles (region_id)`);
+    await this.databaseService.query(`CREATE INDEX IF NOT EXISTS idx_events_region_id ON events (region_id)`);
+    await this.databaseService.query(`CREATE INDEX IF NOT EXISTS idx_events_city_id ON events (city_id)`);
+
+    await this.databaseService.query(`
+      INSERT INTO regions (name, slug)
+      SELECT DISTINCT source.region_name, source.region_slug
+      FROM (
+        SELECT region AS region_name, LOWER(REGEXP_REPLACE(region, '[^[:alnum:]а-яА-Я]+', '-', 'g')) AS region_slug
+        FROM events
+        WHERE region IS NOT NULL AND region <> ''
+        UNION
+        SELECT region AS region_name, LOWER(REGEXP_REPLACE(region, '[^[:alnum:]а-яА-Я]+', '-', 'g')) AS region_slug
+        FROM profiles
+        WHERE region IS NOT NULL AND region <> ''
+      ) source
+      ON CONFLICT (name) DO NOTHING
+    `);
+
+    await this.databaseService.query(`
+      UPDATE profiles p
+      SET region_id = r.id
+      FROM regions r
+      WHERE p.region IS NOT NULL
+        AND p.region <> ''
+        AND p.region_id IS NULL
+        AND r.name = p.region
+    `);
+
+    await this.databaseService.query(`
+      UPDATE events e
+      SET region_id = r.id
+      FROM regions r
+      WHERE e.region IS NOT NULL
+        AND e.region <> ''
+        AND e.region_id IS NULL
+        AND r.name = e.region
+    `);
+
+    await this.databaseService.query(`
+      INSERT INTO cities (region_id, name, slug)
+      SELECT DISTINCT r.id, e.city, LOWER(REGEXP_REPLACE(e.city, '[^[:alnum:]а-яА-Я]+', '-', 'g'))
+      FROM events e
+      JOIN regions r ON r.name = e.region
+      WHERE e.city IS NOT NULL
+        AND e.city <> ''
+      ON CONFLICT (region_id, name) DO NOTHING
+    `);
+
+    await this.databaseService.query(`
+      UPDATE events e
+      SET city_id = c.id
+      FROM regions r, cities c
+      WHERE e.city IS NOT NULL
+        AND e.city <> ''
+        AND e.city_id IS NULL
+        AND r.name = e.region
+        AND c.region_id = r.id
+        AND c.name = e.city
+    `);
+  }
+
+  private async ensureRegion(
+    client: { query: (text: string, params?: unknown[]) => Promise<{ rows: Array<{ id: string }> }> },
+    name: string,
+  ) {
+    const normalized = name.trim();
+    const slug = normalized.toLowerCase().replace(/[^a-zа-я0-9]+/gi, "-").replace(/^-+|-+$/g, "") || "region";
+    const result = await client.query(
+      `
+        INSERT INTO regions (name, slug)
+        VALUES ($1, $2)
+        ON CONFLICT (name)
+        DO UPDATE SET slug = EXCLUDED.slug
+        RETURNING id
+      `,
+      [normalized, slug],
+    );
+
+    return result.rows[0]?.id ?? null;
+  }
+
+  private async ensureCity(
+    client: { query: (text: string, params?: unknown[]) => Promise<{ rows: Array<{ id: string }> }> },
+    regionId: string,
+    name: string,
+  ) {
+    const normalized = name.trim();
+    const slug = normalized.toLowerCase().replace(/[^a-zа-я0-9]+/gi, "-").replace(/^-+|-+$/g, "") || "city";
+    const result = await client.query(
+      `
+        INSERT INTO cities (region_id, name, slug)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (region_id, name)
+        DO UPDATE SET slug = EXCLUDED.slug
+        RETURNING id
+      `,
+      [regionId, normalized, slug],
+    );
+
+    return result.rows[0]?.id ?? null;
   }
 
   private async ensureEventExists(eventId: string) {
