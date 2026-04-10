@@ -22,7 +22,13 @@ async function bootstrap() {
   });
 
   app.setGlobalPrefix("v1");
-  app.enable("trust proxy");
+  const httpAdapter = app.getHttpAdapter();
+  const httpServer = httpAdapter.getInstance?.();
+
+  if (httpServer && typeof httpServer.set === "function") {
+    httpServer.set("trust proxy", 1);
+  }
+
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
