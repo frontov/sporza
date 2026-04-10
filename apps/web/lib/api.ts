@@ -215,10 +215,16 @@ function getApiBaseUrl() {
   }
 
   if (typeof window !== "undefined" && window.location?.origin) {
+    const hostname = window.location.hostname;
+
+    if (hostname === "localhost" || hostname === "127.0.0.1") {
+      return "http://localhost:4000";
+    }
+
     return window.location.origin.replace(/\/$/, "");
   }
 
-  return "";
+  return "http://localhost:4000";
 }
 
 async function request<T>(path: string, init?: RequestInit, accessToken?: string): Promise<T> {
